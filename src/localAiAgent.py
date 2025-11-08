@@ -96,13 +96,14 @@ class Topic:
     turns: TopicTurns = field(default_factory=list)
 
 def _extract_keywords(text: str) -> Set[str]:
-    """Return normalized tokens useful for on-topic filtering."""
     tokens = _TOKEN_PATTERN.findall(text.lower())
+    cleaned = {token.strip("\"'.!?") for token in tokens}
     return {
         token
-        for token in tokens
+        for token in cleaned
         if len(token) > 2 and token not in _STOP_WORDS and token not in _GENERIC_TOKENS
     }
+
 
 def _is_relevant(text: str, topic_keywords: Set[str]) -> bool:
     """Check if a blob of text shares meaningfully overlapping keywords."""
