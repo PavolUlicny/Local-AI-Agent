@@ -5,7 +5,6 @@ from importlib import import_module
 import re
 from typing import List, Optional, Set, Tuple
 
-
 def _resolve_prompt_template():
     """Return the PromptTemplate class from the installed LangChain package."""
     module_paths = [
@@ -27,7 +26,6 @@ def _resolve_prompt_template():
         "Please ensure langchain>=0.0.200 or langchain-core is installed."
     )
 
-
 PromptTemplate = _resolve_prompt_template()
 
 try:
@@ -44,7 +42,6 @@ try:
     from ollama._types import ResponseError
 except ImportError:  # Older packages expose the error on the client module
     ResponseError = Exception
-
 
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9']+")
 _STOP_WORDS: Set[str] = {
@@ -91,14 +88,12 @@ _GENERIC_TOKENS: Set[str] = {"question", "questions", "info"}
 
 TopicTurns = List[Tuple[str, str]]
 
-
 @dataclass
 class Topic:
     """Minimal container for a conversation thread."""
 
     keywords: Set[str] = field(default_factory=set)
     turns: TopicTurns = field(default_factory=list)
-
 
 def _extract_keywords(text: str) -> Set[str]:
     """Return normalized tokens useful for on-topic filtering."""
@@ -109,13 +104,11 @@ def _extract_keywords(text: str) -> Set[str]:
         if len(token) > 2 and token not in _STOP_WORDS and token not in _GENERIC_TOKENS
     }
 
-
 def _is_relevant(text: str, topic_keywords: Set[str]) -> bool:
     """Check if a blob of text shares meaningfully overlapping keywords."""
     if not topic_keywords:
         return True
     return bool(_extract_keywords(text).intersection(topic_keywords))
-
 
 def _format_turns(turns: TopicTurns, fallback: str) -> str:
     if not turns:
@@ -123,7 +116,6 @@ def _format_turns(turns: TopicTurns, fallback: str) -> str:
     return "\n\n".join(
         f"User: {user}\nAssistant: {assistant}" for user, assistant in turns
     )
-
 
 def _collect_prior_responses(
     topic: Topic,
@@ -143,7 +135,6 @@ def _collect_prior_responses(
         snippets.append(snippet)
 
     return "\n\n---\n\n".join(snippets) or "No prior answers for this topic."
-
 
 def _select_topic(
     llm: OllamaLLM,
@@ -185,7 +176,6 @@ def _select_topic(
             return idx, recent_turns, base_keywords.union(topics[idx].keywords)
 
     return None, [], set(base_keywords)
-
 
 def main() -> None:
     """Run a local Ollama-backed model with DuckDuckGo search context."""
@@ -236,8 +226,6 @@ def main() -> None:
         ),
     )
 
-
-
     planning_prompt = PromptTemplate(
         input_variables=[
             "conversation_history",
@@ -263,7 +251,6 @@ def main() -> None:
         ),
     )
 
-
     seed_prompt = PromptTemplate(
         input_variables=["conversation_history", "user_question", "known_answers"],
         template=(
@@ -277,7 +264,6 @@ def main() -> None:
             "User question:\n{user_question}"
         ),
     )
-
 
     context_mode_prompt = PromptTemplate(
         input_variables=["recent_conversation", "new_question"],
@@ -293,7 +279,6 @@ def main() -> None:
             "New question:\n{new_question}"
         ),
     )
-
 
     topics: List[Topic] = []
 
@@ -491,7 +476,6 @@ def main() -> None:
 
         topic_entry.keywords.update(turn_keywords)
         topic_entry.keywords.update(topic_keywords)
-
 
 if __name__ == "__main__":
     main()
