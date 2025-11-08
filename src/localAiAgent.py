@@ -242,6 +242,7 @@ def main() -> None:
             "- Only output the queries, one per line.\n"
             "- Do not add anything, just output the queries themselves.\n"
             "- Do not repeat already covered information.\n"
+            "- Do not say anything like 'Here are some suggestions:' or 'Here are new search queries', only type the queries themselves.\n"
             "- Do not explain or comment.\n"
             "- If nothing new is useful, output only: NONE.\n\n"
             "Conversation:\n{conversation_history}\n\n"
