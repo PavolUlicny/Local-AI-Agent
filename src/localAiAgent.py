@@ -44,6 +44,8 @@ except ImportError:  # Older packages expose the error on the client module
 def main() -> None:
     """Run a local Ollama-backed model with DuckDuckGo search context."""
     max_context_turns = 6
+    max_search_rounds = 5
+    max_followup_suggestions = 2
 
     llm = OllamaLLM(
         model="llama3:8b",
@@ -71,16 +73,31 @@ def main() -> None:
     )
 
     planning_prompt = PromptTemplate(
-        input_variables=["conversation_history", "user_question", "results_to_date"],
+        input_variables=[
+            "conversation_history",
+            "user_question",
+            "results_to_date",
+            "suggestion_limit",
+        ],
         template=(
             "You are assessing whether more web searches are needed to answer the question.\n"
             "Question: {user_question}\n\n"
             "Conversation so far:\n{conversation_history}\n\n"
             "Results collected so far:\n{results_to_date}\n\n"
-            "Propose up to 2 high-value follow-up search queries that would meaningfully improve "
+            "Propose up to {suggestion_limit} high-value follow-up search queries that would meaningfully improve "
             "the final response, especially if the user requested exceptional depth. Return "
             "each query on its own line with no numbering. If no additional searches are "
             "required, respond with NONE."
+        ),
+    )
+
+    seed_prompt = PromptTemplate(
+        input_variables=["conversation_history", "user_question"],
+        template=(
+            "You are crafting a single high-impact web search query.\n"
+            "Conversation so far:\n{conversation_history}\n\n"
+            "User question: {user_question}\n\n"
+            "Return exactly one concise search query that captures the essence of the request."
         ),
     )
 
@@ -103,7 +120,7 @@ def main() -> None:
 
         recent_history = conversation_history[-max_context_turns:]
         conversation_text = (
-            "None"
+            "No prior conversation."
             if not recent_history
             else "\n\n".join(
                 f"User: {user_msg}\nAssistant: {assistant_msg}"
@@ -112,8 +129,33 @@ def main() -> None:
         )
 
         aggregated_results: List[str] = []
-        pending_queries: List[str] = [user_query]
-        max_rounds = 5
+
+        primary_search_query = user_query
+        try:
+            seed_response = llm.invoke(
+                seed_prompt.format(
+                    conversation_history=conversation_text,
+                    user_question=user_query,
+                )
+            )
+            seed_text = str(seed_response).strip()
+            for line in seed_text.splitlines():
+                candidate = line.strip().strip("-*").strip()
+                if candidate:
+                    primary_search_query = candidate
+                    break
+        except ResponseError as exc:
+            message = str(exc)
+            if "not found" in message.lower():
+                print(
+                    "Model 'llama3:8b' not found. Run 'ollama pull llama3:8b' in a terminal "
+                    "before retrying."
+                )
+                return
+            raise
+
+        pending_queries: List[str] = [primary_search_query]
+        max_rounds = max_search_rounds
 
         round_index = 0
         while round_index < len(pending_queries) and round_index < max_rounds:
@@ -127,12 +169,19 @@ def main() -> None:
             if round_index >= max_rounds:
                 break
 
-            results_to_date = "\n\n".join(aggregated_results) or "None"
+            remaining_slots = max_rounds - len(pending_queries)
+            if remaining_slots <= 0:
+                continue
+
+            suggestion_limit = min(max_followup_suggestions, remaining_slots)
+            results_to_date = "\n\n".join(aggregated_results) or "No results yet."
+
             suggestions_raw = llm.invoke(
                 planning_prompt.format(
                     conversation_history=conversation_text,
                     user_question=user_query,
                     results_to_date=results_to_date,
+                    suggestion_limit=suggestion_limit,
                 )
             )
 
@@ -152,7 +201,9 @@ def main() -> None:
 
         formatted_prompt = response_prompt.format(
             conversation_history=conversation_text,
-            search_results="\n\n".join(aggregated_results) or "No search results.",
+            search_results="\n\n".join(aggregated_results)
+            if aggregated_results
+            else "No search results collected.",
             user_question=user_query,
         )
 
