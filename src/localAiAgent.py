@@ -93,6 +93,8 @@ class Topic:
     turns: TopicTurns = field(default_factory=list)
 
 def _extract_keywords(text: str) -> Set[str]:
+    if not text:
+        return set()
     tokens = _TOKEN_PATTERN.findall(text.lower())
     cleaned = {token.strip("\"'.!?") for token in tokens}
     return {
@@ -245,7 +247,11 @@ def main() -> None:
             "- Do not add anything, just output the queries themselves.\n"
             "- Do not repeat already covered information.\n"
             "- Do not say anything like 'Here are some suggestions:' or 'Here are new search queries', only type the queries themselves.\n"
+            "- Do not add formatting like bullet points or numbering.\n"
+            "- Do not use quotes around queries.\n"
+            "- Do not add any notes or commentary.\n"
             "- Do not explain or comment.\n"
+            "- Output exactly one search query per line.\n"
             "- If nothing new is useful, output only: NONE.\n\n"
             "Conversation:\n{conversation_history}\n\n"
             "Known answers:\n{known_answers}\n\n"
@@ -268,20 +274,79 @@ def main() -> None:
         ),
     )
 
+    query_filter_prompt = PromptTemplate(
+        input_variables=["conversation_history", "candidate_query"],
+        template=(
+            "ROLE: You are a relevance filter that decides whether a search query is likely to produce useful information "
+            "for the user's current topic of discussion.\n\n"
+            "TASK: Review the conversation context and the proposed query. "
+            "Your goal is to allow any query that has a reasonable chance of being relevant, "
+            "even if it is not a perfect semantic match.\n\n"
+            "RULES:\n"
+            "- Say YES if the query might logically expand, update, or clarify the topic of conversation.\n"
+            "- Say YES if it could provide contextually useful data (like facts, examples, or updates) about the subject.\n"
+            "- Say YES if it relates to real-world aspects of the user's question (e.g., time, location, event, person, or object mentioned).\n"
+            "- Say NO only if it is clearly unrelated, promotional, spam-like, or about an entirely different topic.\n"
+            "- When uncertain, prefer YES.\n\n"
+            "Conversation so far:\n{conversation_history}\n\n"
+            "Candidate search query:\n{candidate_query}\n\n"
+            "Answer with only 'YES' or 'NO', DO NOT add any explanations or extra text like notes or commentary."
+        ),
+    )
+
+
+    result_filter_prompt = PromptTemplate(
+        input_variables=[
+            "user_question",
+            "search_query",
+            "known_answers",
+            "topic_keywords",
+            "raw_result"
+        ],
+        template=(
+            "ROLE: You are a relevance evaluator that decides whether a search result is useful "
+            "for answering the user's question.\n\n"
+            "TASK: Examine the search result and determine if it contains information that is factual, "
+            "contextually relevant, or helps clarify, expand, or update the topic of interest.\n\n"
+            "CONTEXT:\n"
+            "- User question: {user_question}\n"
+            "- Search query used: {search_query}\n"
+            "- Known answers so far: {known_answers}\n"
+            "- Topic keywords: {topic_keywords}\n"
+            "- Search result text: {raw_result}\n\n"
+            "RULES:\n"
+            "- Say YES if the result likely contains information related to the topic, "
+            "even if it overlaps with existing data or is partially relevant.\n"
+            "- Say YES if it offers background, examples, factual updates, or clarifications.\n"
+            "- Say YES if it seems indirectly useful or provides broader context that could strengthen the final answer.\n"
+            "- Say NO only if the text is clearly off-topic, spam-like, irrelevant, or entirely redundant.\n"
+            "- When uncertain, prefer YES.\n\n"
+            "OUTPUT: Return exactly one token — YES or NO."
+        ),
+    )
+
+
     context_mode_prompt = PromptTemplate(
         input_variables=["recent_conversation", "new_question"],
         template=(
-            "TASK: Classify how the new question relates to the recent conversation.\n\n"
-            "OUTPUT:\n"
-            "- FOLLOW_UP → depends directly on the last answer.\n"
-            "- EXPAND → same topic, seeks broader or deeper info.\n"
-            "- NEW_TOPIC → unrelated subject.\n\n"
-            "Return exactly one token: FOLLOW_UP, EXPAND, or NEW_TOPIC.\n"
-            "Do not add punctuation or explanations.\n\n"
+            "ROLE: You are a context classifier that determines how the user's new question "
+            "relates to their recent conversation.\n\n"
+            "TASK: Analyze meaning, not just wording. Small phrasing or topic shifts can still "
+            "count as connected if they explore the same idea, entity, or theme.\n\n"
+            "Very similar or identical wording does not guarantee a FOLLOW_UP if the intent has changed significantly.\n\n"
+            "CLASSIFICATION RULES:\n"
+            "- FOLLOW_UP → The new question directly continues, clarifies, or requests more detail "
+            "about the previous answer or topic.\n"
+            "- EXPAND → The new question is on the same general subject but broadens or shifts focus slightly.\n"
+            "- NEW_TOPIC → The new question is unrelated to recent discussion or introduces a completely new subject.\n\n"
+            "When uncertain between FOLLOW_UP and EXPAND, choose FOLLOW_UP. "
+            "When uncertain between EXPAND and NEW_TOPIC, choose EXPAND.\n\n"
+            "OUTPUT: Return exactly one token — FOLLOW_UP, EXPAND, or NEW_TOPIC.\n\n"
             "Recent conversation:\n{recent_conversation}\n\n"
             "New question:\n{new_question}"
         ),
     )
+
 
     topics: List[Topic] = []
 
@@ -373,21 +438,38 @@ def main() -> None:
         round_index = 0
         while round_index < len(pending_queries) and round_index < max_rounds:
             current_query = pending_queries[round_index]
-            result = search.run(current_query)
-            normalized_result = result.strip()
+            result_raw = search.run(current_query)
+            result_text = str(result_raw or "")
+            normalized_result = result_text.strip()
             if normalized_result and normalized_result in seen_results:
                 round_index += 1
                 continue
 
-            if not _is_relevant(result, topic_keywords):
-                print(
-                    f"Ignoring low-relevance search result for query '{current_query}'."
+            relevant = _is_relevant(result_text, topic_keywords)
+            if not relevant:
+                topic_keywords_text = ", ".join(sorted(topic_keywords)) if topic_keywords else "None"
+                relevance_raw = llm.invoke(
+                    result_filter_prompt.format(
+                        user_question=user_query,
+                        search_query=current_query,
+                        raw_result=result_text,
+                        known_answers=prior_responses_text,
+                        topic_keywords=topic_keywords_text,
+                    )
                 )
-            else:
-                aggregated_results.append(result)
+                relevance_decision = str(relevance_raw).strip().upper()
+                if relevance_decision.startswith("YES"):
+                    relevant = True
+                else:
+                    print(
+                        f"Ignoring low-relevance search result for query '{current_query}'."
+                    )
+
+            if relevant:
+                aggregated_results.append(result_text)
                 if normalized_result:
                     seen_results.add(normalized_result)
-                topic_keywords.update(_extract_keywords(result))
+                topic_keywords.update(_extract_keywords(result_text))
 
             round_index += 1
             if round_index >= max_rounds:
@@ -412,22 +494,27 @@ def main() -> None:
 
             new_queries: List[str] = []
             for line in str(suggestions_raw).splitlines():
-                normalized = line.strip().strip("-*").strip()
+                normalized = line.strip().strip("-*\"").strip()
                 if not normalized:
                     continue
                 if normalized.lower() == "none":
                     new_queries = []
                     break
-                if topic_keywords:
-                    suggestion_terms = _extract_keywords(normalized)
-                    if not suggestion_terms.intersection(topic_keywords):
-                        print(f"Skipping off-topic follow-up suggestion: {normalized}")
-                        continue
                 new_queries.append(normalized)
 
             for candidate in new_queries:
                 if candidate not in pending_queries and len(pending_queries) < max_rounds:
-                    pending_queries.append(candidate)
+                    verdict_raw = llm.invoke(
+                        query_filter_prompt.format(
+                            candidate_query=candidate,
+                            conversation_history=conversation_text,
+                        )
+                    )
+                    verdict = str(verdict_raw).strip().upper()
+                    if verdict.startswith("YES"):
+                        pending_queries.append(candidate)
+                    else:
+                        print(f"Skipping off-topic follow-up suggestion: {candidate}")
 
         formatted_prompt = response_prompt.format(
             conversation_history=conversation_text,
