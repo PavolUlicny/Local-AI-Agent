@@ -6,7 +6,6 @@ import re
 from typing import List, Optional, Set, Tuple
 
 def _resolve_prompt_template():
-    """Return the PromptTemplate class from the installed LangChain package."""
     module_paths = [
         "langchain_core.prompts",
         "langchain.prompts",
@@ -40,7 +39,7 @@ from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
 try:
     from ollama._types import ResponseError
-except ImportError:  # Older packages expose the error on the client module
+except ImportError:
     ResponseError = Exception
 
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9']+")
@@ -90,8 +89,6 @@ TopicTurns = List[Tuple[str, str]]
 
 @dataclass
 class Topic:
-    """Minimal container for a conversation thread."""
-
     keywords: Set[str] = field(default_factory=set)
     turns: TopicTurns = field(default_factory=list)
 
@@ -106,7 +103,6 @@ def _extract_keywords(text: str) -> Set[str]:
 
 
 def _is_relevant(text: str, topic_keywords: Set[str]) -> bool:
-    """Check if a blob of text shares meaningfully overlapping keywords."""
     if not topic_keywords:
         return True
     return bool(_extract_keywords(text).intersection(topic_keywords))
@@ -179,13 +175,13 @@ def _select_topic(
     return None, [], set(base_keywords)
 
 def main() -> None:
-    """Run a local Ollama-backed model with DuckDuckGo search context."""
     max_context_turns = 6
     max_search_rounds = 5
     max_followup_suggestions = 2
+    used_model = "solar:10.7b"
 
     llm = OllamaLLM(
-        model="llama3:8b",
+        model=used_model,
         temperature=0.85,
         top_p=0.95,
         top_k=64,
@@ -209,6 +205,10 @@ def main() -> None:
             "TASK: Integrate all relevant information from the search results and prior discussion to produce a thorough explanation. "
             "Focus on clarity, depth, and accuracy rather than brevity. Write as if you are teaching or summarizing for understanding.\n\n"
             "You can only provide plain text responses. Do not include images, tables, charts, or any other non-text content.\n\n"
+            "Do not fabricate information. If the search results do not contain relevant information, state that you could not find an answer based on the provided data.\n\n"
+            "Do not reference the search process, the assistant, or any meta-commentary in your answer.\n\n"
+            "Do not mention 'your knowledge cutoff' or similar phrases.\n\n"
+            "Do not mention search results or searches in your answer.\n\n"
             "INCLUDE WHEN RELEVANT:\n"
             "- Key facts, definitions, mechanisms, or background context\n"
             "- Historical or technical explanations\n"
@@ -287,7 +287,7 @@ def main() -> None:
 
     while True:
         try:
-            user_query = input("Enter your request (or 'exit' to quit): ").strip()
+            user_query = input("\nEnter your request (or 'exit' to quit): ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting. Goodbye!")
             return
@@ -318,7 +318,7 @@ def main() -> None:
             message = str(exc)
             if "not found" in message.lower():
                 print(
-                    "Model 'llama3:8b' not found. Run 'ollama pull llama3:8b' in a terminal "
+                    f"Model '{used_model}' not found. Run 'ollama pull {used_model}' in a terminal "
                     "before retrying."
                 )
                 return
@@ -358,7 +358,7 @@ def main() -> None:
             message = str(exc)
             if "not found" in message.lower():
                 print(
-                    "Model 'llama3:8b' not found. Run 'ollama pull llama3:8b' in a terminal "
+                    f"Model '{used_model}' not found. Run 'ollama pull {used_model}' in a terminal "
                     "before retrying."
                 )
                 return
@@ -444,13 +444,13 @@ def main() -> None:
             message = str(exc)
             if "not found" in message.lower():
                 print(
-                    "Model 'llama3:8b' not found. Run 'ollama pull llama3:8b' in a terminal "
+                    f"Model '{used_model}' not found. Run 'ollama pull {used_model}' in a terminal "
                     "before retrying."
                 )
                 return
             raise
 
-        print("\n[Ollama Answer]")
+        print("\n[Answer]")
         response_chunks: List[str] = []
         for chunk in response_stream:
             text_chunk = str(chunk)
