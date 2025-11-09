@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from importlib import import_module
 import re
 from typing import List, Optional, Set, Tuple
@@ -85,6 +86,65 @@ _STOP_WORDS: Set[str] = {
 }
 _GENERIC_TOKENS: Set[str] = {"question", "questions", "info"}
 
+MAX_CONVERSATION_CHARS = 1800
+MAX_PRIOR_RESPONSE_CHARS = 1200
+MAX_SEARCH_RESULTS_CHARS = 2200
+MAX_TURN_KEYWORD_SOURCE_CHARS = 1800
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    truncated = text[: max_chars].rsplit(" ", 1)[0].rstrip(".,;:")
+    return f"{truncated}..."
+
+
+def _normalize_context_decision(value: str) -> str:
+    normalized = value.strip().upper().replace("-", "_").replace(" ", "_")
+    if normalized.startswith("FOLLOW"):
+        return "FOLLOW_UP"
+    if normalized.startswith("EXPAND"):
+        return "EXPAND"
+    if normalized.startswith("NEW"):
+        return "NEW_TOPIC"
+    return normalized or "NEW_TOPIC"
+
+
+def _current_datetime_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _pick_seed_query(seed_text: str, fallback: str) -> str:
+    banned = {
+        "none",
+        "n/a",
+        "na",
+        "no",
+        "nothing",
+        "no new info",
+        "no new information",
+        "no additional info",
+        "no additional information",
+    }
+    for line in seed_text.splitlines():
+        candidate = line.strip().strip("-*\"'").strip()
+        if not candidate:
+            continue
+        if ":" in candidate:
+            prefix, remainder = candidate.split(":", 1)
+            if prefix.isupper():
+                candidate = remainder.strip()
+        cleaned = re.sub(r"\s+", " ", candidate)
+        lowered = cleaned.lower()
+        if not cleaned or lowered in banned:
+            continue
+        if not any(ch.isalnum() for ch in cleaned):
+            continue
+        if len(cleaned) < 3:
+            continue
+        return cleaned
+    return fallback
+
 TopicTurns = List[Tuple[str, str]]
 
 @dataclass
@@ -142,6 +202,7 @@ def _select_topic(
     question: str,
     base_keywords: Set[str],
     max_context_turns: int,
+    current_datetime: str,
 ) -> Tuple[Optional[int], TopicTurns, Set[str]]:
     if not topics:
         return None, [], set(base_keywords)
@@ -163,9 +224,10 @@ def _select_topic(
             context_prompt.format(
                 recent_conversation=_format_turns(recent_turns, "No prior conversation."),
                 new_question=question,
+                current_datetime=current_datetime,
             )
         )
-        normalized = str(decision_raw).strip().upper()
+        normalized = _normalize_context_decision(str(decision_raw))
         decisions.append((normalized, idx, recent_turns))
         if normalized == "FOLLOW_UP":
             return idx, recent_turns, base_keywords.union(topics[idx].keywords)
@@ -197,6 +259,7 @@ def main() -> None:
 
     response_prompt = PromptTemplate(
         input_variables=[
+            "current_datetime",
             "conversation_history",
             "search_results",
             "user_question",
@@ -211,6 +274,8 @@ def main() -> None:
             "Do not reference the search process, the assistant, or any meta-commentary in your answer.\n\n"
             "Do not mention 'your knowledge cutoff' or similar phrases.\n\n"
             "Do not mention search results or searches in your answer.\n\n"
+            "Do not say anything like 'Based on the search results', 'According to the information found', 'Based on the time and date provided' or 'Based on the timestamp provided'.\n\n"
+            "The search evidence wasn't provided by the user, but was gathered to help you answer their question, so do not mention the search data itself in the answer.\n\n"
             "INCLUDE WHEN RELEVANT:\n"
             "- Key facts, definitions, mechanisms, or background context\n"
             "- Historical or technical explanations\n"
@@ -226,12 +291,14 @@ def main() -> None:
             "Conversation so far:\n{conversation_history}\n\n"
             "Earlier answers:\n{prior_responses}\n\n"
             "Search evidence:\n{search_results}\n\n"
-            "User question:\n{user_question}"
+            "User question:\n{user_question}\n\n"
+            "Current date and time (UTC): {current_datetime}"
         ),
     )
 
     planning_prompt = PromptTemplate(
         input_variables=[
+            "current_datetime",
             "conversation_history",
             "user_question",
             "results_to_date",
@@ -240,6 +307,7 @@ def main() -> None:
         ],
         template=(
             "ROLE: You suggest new web search queries.\n\n"
+            
             "TASK: Generate up to {suggestion_limit} specific search queries "
             "that could add *new* information about the user’s question.\n\n"
             "RULES:\n"
@@ -256,18 +324,25 @@ def main() -> None:
             "Conversation:\n{conversation_history}\n\n"
             "Known answers:\n{known_answers}\n\n"
             "User question:\n{user_question}\n\n"
-            "Existing results:\n{results_to_date}"
+            "Existing results:\n{results_to_date}\n\n"
+            "Current date/time (UTC): {current_datetime}"
         ),
     )
 
     seed_prompt = PromptTemplate(
-        input_variables=["conversation_history", "user_question", "known_answers"],
+        input_variables=[
+            "current_datetime",
+            "conversation_history",
+            "user_question",
+            "known_answers",
+        ],
         template=(
             "TASK: Write one concise search query that captures the user’s question "
             "and seeks information not already present in known answers.\n\n"
             "RULES:\n"
             "- Return only the search query text.\n"
             "- Do not explain or add commentary.\n\n"
+            "Current date/time (UTC): {current_datetime}\n\n"
             "Conversation:\n{conversation_history}\n\n"
             "Known answers:\n{known_answers}\n\n"
             "User question:\n{user_question}"
@@ -275,7 +350,7 @@ def main() -> None:
     )
 
     query_filter_prompt = PromptTemplate(
-        input_variables=["conversation_history", "candidate_query"],
+        input_variables=["current_datetime", "conversation_history", "candidate_query"],
         template=(
             "ROLE: You are a relevance filter that decides whether a search query is likely to produce useful information "
             "for the user's current topic of discussion.\n\n"
@@ -290,6 +365,7 @@ def main() -> None:
             "- When uncertain, prefer YES.\n\n"
             "Conversation so far:\n{conversation_history}\n\n"
             "Candidate search query:\n{candidate_query}\n\n"
+            "Current date/time (UTC): {current_datetime}\n\n"
             "Answer with only 'YES' or 'NO', DO NOT add any explanations or extra text like notes or commentary."
         ),
     )
@@ -297,6 +373,7 @@ def main() -> None:
 
     result_filter_prompt = PromptTemplate(
         input_variables=[
+            "current_datetime",
             "user_question",
             "search_query",
             "known_answers",
@@ -313,7 +390,8 @@ def main() -> None:
             "- Search query used: {search_query}\n"
             "- Known answers so far: {known_answers}\n"
             "- Topic keywords: {topic_keywords}\n"
-            "- Search result text: {raw_result}\n\n"
+            "- Search result text: {raw_result}\n"
+            "- Current date/time (UTC): {current_datetime}\n\n"
             "RULES:\n"
             "- Say YES if the result likely contains information related to the topic, "
             "even if it overlaps with existing data or is partially relevant.\n"
@@ -327,7 +405,7 @@ def main() -> None:
 
 
     context_mode_prompt = PromptTemplate(
-        input_variables=["recent_conversation", "new_question"],
+        input_variables=["current_datetime", "recent_conversation", "new_question"],
         template=(
             "ROLE: You are a context classifier that determines how the user's new question "
             "relates to their recent conversation.\n\n"
@@ -343,7 +421,8 @@ def main() -> None:
             "When uncertain between EXPAND and NEW_TOPIC, choose EXPAND.\n\n"
             "OUTPUT: Return exactly one token — FOLLOW_UP, EXPAND, or NEW_TOPIC.\n\n"
             "Recent conversation:\n{recent_conversation}\n\n"
-            "New question:\n{new_question}"
+            "New question:\n{new_question}\n\n"
+            "Current date/time (UTC): {current_datetime}"
         ),
     )
 
@@ -365,6 +444,7 @@ def main() -> None:
             print("Goodbye!")
             return
 
+        current_datetime = _current_datetime_utc()
         question_keywords = _extract_keywords(user_query)
         try:
             (
@@ -378,6 +458,7 @@ def main() -> None:
                 user_query,
                 question_keywords,
                 max_context_turns,
+                current_datetime,
             )
         except ResponseError as exc:
             message = str(exc)
@@ -394,11 +475,15 @@ def main() -> None:
         conversation_text = _format_turns(
             recent_history, "No prior relevant conversation."
         )
+        conversation_text = _truncate_text(conversation_text, MAX_CONVERSATION_CHARS)
 
         prior_responses_text = (
             _collect_prior_responses(topics[selected_topic_index])
             if selected_topic_index is not None
             else "No prior answers for this topic."
+        )
+        prior_responses_text = _truncate_text(
+            prior_responses_text, MAX_PRIOR_RESPONSE_CHARS
         )
 
         aggregated_results: List[str] = []
@@ -408,17 +493,14 @@ def main() -> None:
         try:
             seed_response = llm.invoke(
                 seed_prompt.format(
+                    current_datetime=current_datetime,
                     conversation_history=conversation_text,
                     user_question=user_query,
                     known_answers=prior_responses_text,
                 )
             )
             seed_text = str(seed_response).strip()
-            for line in seed_text.splitlines():
-                candidate = line.strip().strip("-*").strip()
-                if candidate:
-                    primary_search_query = candidate
-                    break
+            primary_search_query = _pick_seed_query(seed_text, user_query)
         except ResponseError as exc:
             message = str(exc)
             if "not found" in message.lower():
@@ -450,6 +532,7 @@ def main() -> None:
                 topic_keywords_text = ", ".join(sorted(topic_keywords)) if topic_keywords else "None"
                 relevance_raw = llm.invoke(
                     result_filter_prompt.format(
+                        current_datetime=current_datetime,
                         user_question=user_query,
                         search_query=current_query,
                         raw_result=result_text,
@@ -481,9 +564,13 @@ def main() -> None:
 
             suggestion_limit = min(max_followup_suggestions, remaining_slots)
             results_to_date = "\n\n".join(aggregated_results) or "No results yet."
+            results_to_date = _truncate_text(
+                results_to_date, MAX_SEARCH_RESULTS_CHARS
+            )
 
             suggestions_raw = llm.invoke(
                 planning_prompt.format(
+                    current_datetime=current_datetime,
                     conversation_history=conversation_text,
                     user_question=user_query,
                     results_to_date=results_to_date,
@@ -506,6 +593,7 @@ def main() -> None:
                 if candidate not in pending_queries and len(pending_queries) < max_rounds:
                     verdict_raw = llm.invoke(
                         query_filter_prompt.format(
+                            current_datetime=current_datetime,
                             candidate_query=candidate,
                             conversation_history=conversation_text,
                         )
@@ -516,11 +604,19 @@ def main() -> None:
                     else:
                         print(f"Skipping off-topic follow-up suggestion: {candidate}")
 
-        formatted_prompt = response_prompt.format(
-            conversation_history=conversation_text,
-            search_results="\n\n".join(aggregated_results)
+        search_results_text = (
+            "\n\n".join(aggregated_results)
             if aggregated_results
-            else "No search results collected.",
+            else "No search results collected."
+        )
+        search_results_text = _truncate_text(
+            search_results_text, MAX_SEARCH_RESULTS_CHARS
+        )
+
+        formatted_prompt = response_prompt.format(
+            current_datetime=current_datetime,
+            conversation_history=conversation_text,
+            search_results=search_results_text,
             user_question=user_query,
             prior_responses=prior_responses_text,
         )
@@ -558,8 +654,11 @@ def main() -> None:
         if len(topic_entry.turns) > max_context_turns * 2:
             topic_entry.turns = topic_entry.turns[-max_context_turns * 2 :]
 
+        aggregated_keyword_source = _truncate_text(
+            " ".join(aggregated_results), MAX_TURN_KEYWORD_SOURCE_CHARS
+        )
         turn_keywords = _extract_keywords(
-            " ".join([user_query, response_text, " ".join(aggregated_results)])
+            " ".join([user_query, response_text, aggregated_keyword_source])
         )
         if not turn_keywords:
             turn_keywords = set(question_keywords)
