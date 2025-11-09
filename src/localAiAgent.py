@@ -86,10 +86,10 @@ _STOP_WORDS: Set[str] = {
 }
 _GENERIC_TOKENS: Set[str] = {"question", "questions", "info"}
 
-MAX_CONVERSATION_CHARS = 1800
-MAX_PRIOR_RESPONSE_CHARS = 1200
-MAX_SEARCH_RESULTS_CHARS = 2200
-MAX_TURN_KEYWORD_SOURCE_CHARS = 1800
+MAX_CONVERSATION_CHARS = 6000
+MAX_PRIOR_RESPONSE_CHARS = 3600
+MAX_SEARCH_RESULTS_CHARS = 7000
+MAX_TURN_KEYWORD_SOURCE_CHARS = 5000
 
 
 def _truncate_text(text: str, max_chars: int) -> str:
@@ -242,7 +242,7 @@ def main() -> None:
     max_context_turns = 6
     max_search_rounds = 5
     max_followup_suggestions = 2
-    used_model = "solar:10.7b"
+    used_model = "llama3:8b"
 
     llm = OllamaLLM(
         model=used_model,
@@ -270,6 +270,8 @@ def main() -> None:
             "TASK: Integrate all relevant information from the search results and prior discussion to produce a thorough explanation. "
             "Focus on clarity, depth, and accuracy rather than brevity. Write as if you are teaching or summarizing for understanding.\n\n"
             "You can only provide plain text responses. Do not include images, tables, charts, or any other non-text content.\n\n"
+            "Do not repeat info multiple times within your answer.\n\n"
+            "Do not repeat info already covered in prior responses unless it is essential for context.\n\n"
             "Do not fabricate information. If the search results do not contain relevant information, state that you could not find an answer based on the provided data.\n\n"
             "Do not reference the search process, the assistant, or any meta-commentary in your answer.\n\n"
             "Do not mention 'your knowledge cutoff' or similar phrases.\n\n"
