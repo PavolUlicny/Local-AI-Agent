@@ -307,7 +307,6 @@ def main() -> None:
         ],
         template=(
             "ROLE: You suggest new web search queries.\n\n"
-            
             "TASK: Generate up to {suggestion_limit} specific search queries "
             "that could add *new* information about the user’s question.\n\n"
             "RULES:\n"
@@ -370,7 +369,6 @@ def main() -> None:
         ),
     )
 
-
     result_filter_prompt = PromptTemplate(
         input_variables=[
             "current_datetime",
@@ -425,7 +423,6 @@ def main() -> None:
             "Current date/time (UTC): {current_datetime}"
         ),
     )
-
 
     topics: List[Topic] = []
 
