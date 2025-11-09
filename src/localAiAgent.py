@@ -91,13 +91,11 @@ MAX_PRIOR_RESPONSE_CHARS = 3600
 MAX_SEARCH_RESULTS_CHARS = 7000
 MAX_TURN_KEYWORD_SOURCE_CHARS = 5000
 
-
 def _truncate_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     truncated = text[: max_chars].rsplit(" ", 1)[0].rstrip(".,;:")
     return f"{truncated}..."
-
 
 def _normalize_context_decision(value: str) -> str:
     normalized = value.strip().upper().replace("-", "_").replace(" ", "_")
@@ -109,10 +107,8 @@ def _normalize_context_decision(value: str) -> str:
         return "NEW_TOPIC"
     return normalized or "NEW_TOPIC"
 
-
 def _current_datetime_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
 
 def _pick_seed_query(seed_text: str, fallback: str) -> str:
     banned = {
@@ -162,7 +158,6 @@ def _extract_keywords(text: str) -> Set[str]:
         for token in cleaned
         if len(token) > 2 and token not in _STOP_WORDS and token not in _GENERIC_TOKENS
     }
-
 
 def _is_relevant(text: str, topic_keywords: Set[str]) -> bool:
     if not topic_keywords:
@@ -242,7 +237,7 @@ def main() -> None:
     max_context_turns = 6
     max_search_rounds = 5
     max_followup_suggestions = 2
-    used_model = "llama3:8b"
+    used_model = "solar:10.7b"
 
     llm = OllamaLLM(
         model=used_model,
@@ -402,7 +397,6 @@ def main() -> None:
             "OUTPUT: Return exactly one token — YES or NO."
         ),
     )
-
 
     context_mode_prompt = PromptTemplate(
         input_variables=["current_datetime", "recent_conversation", "new_question"],
