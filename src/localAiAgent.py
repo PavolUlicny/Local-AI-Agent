@@ -86,10 +86,10 @@ _STOP_WORDS: Set[str] = {
 }
 _GENERIC_TOKENS: Set[str] = {"question", "questions", "info"}
 
-MAX_CONVERSATION_CHARS = 6000
-MAX_PRIOR_RESPONSE_CHARS = 3600
-MAX_SEARCH_RESULTS_CHARS = 7000
-MAX_TURN_KEYWORD_SOURCE_CHARS = 5000
+MAX_CONVERSATION_CHARS = 22500
+MAX_PRIOR_RESPONSE_CHARS = 13000
+MAX_SEARCH_RESULTS_CHARS = 32500
+MAX_TURN_KEYWORD_SOURCE_CHARS = 17500
 
 def _truncate_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
@@ -234,19 +234,19 @@ def _select_topic(
     return None, [], set(base_keywords)
 
 def main() -> None:
-    max_context_turns = 6
-    max_search_rounds = 5
-    max_followup_suggestions = 2
-    used_model = "solar:10.7b"
+    max_context_turns = 8
+    max_search_rounds = 12
+    max_followup_suggestions = 6
+    used_model = "cogito:8b"
 
     llm = OllamaLLM(
         model=used_model,
-        temperature=0.85,
-        top_p=0.95,
-        top_k=64,
-        repeat_penalty=1.05,
-        num_predict=4096,
-        num_ctx=4096,
+        temperature=0.60,
+        top_p=0.9,
+        top_k=40,
+        repeat_penalty=1.2,
+        num_predict=16384,
+        num_ctx=16384,
     )
     search = DuckDuckGoSearchRun(
         api_wrapper=DuckDuckGoSearchAPIWrapper(region="us-en", safesearch="moderate")
@@ -261,18 +261,24 @@ def main() -> None:
             "prior_responses",
         ],
         template=(
+            "Use this prompt as the only source of information and truth to answer the user's question.\n\n"
             "ROLE: You are a knowledgeable and precise explainer who writes detailed, well-structured, and factual answers.\n\n"
-            "TASK: Integrate all relevant information from the search results and prior discussion to produce a thorough explanation. "
+            "TASK: Integrate all relevant information from the search results and prior discussion to produce a thorough explanation.\n\n"
             "Focus on clarity, depth, and accuracy rather than brevity. Write as if you are teaching or summarizing for understanding.\n\n"
             "You can only provide plain text responses. Do not include images, tables, charts, or any other non-text content.\n\n"
             "Do not repeat info multiple times within your answer.\n\n"
             "Do not repeat info already covered in prior responses unless it is essential for context.\n\n"
-            "Do not fabricate information. If the search results do not contain relevant information, state that you could not find an answer based on the provided data.\n\n"
+            "Do not fabricate information. If the search results do not contain relevant information, state that you could not find an answer to the question.\n\n"
             "Do not reference the search process, the assistant, or any meta-commentary in your answer.\n\n"
             "Do not mention 'your knowledge cutoff' or similar phrases.\n\n"
             "Do not mention search results or searches in your answer.\n\n"
-            "Do not say anything like 'Based on the search results', 'According to the information found', 'Based on the time and date provided' or 'Based on the timestamp provided'.\n\n"
-            "The search evidence wasn't provided by the user, but was gathered to help you answer their question, so do not mention the search data itself in the answer.\n\n"
+            "Do not say 'Based on the search results', 'According to the information found', 'Based on the time and date provided' or 'Based on the timestamp provided' or any similar phrases.\n\n"
+            "The search evidence and timestamp wasn't provided by the user, but was gathered to help you answer their question, so do not mention the search data itself or that the user provided the timestamp in the answer.\n\n"
+            "The user you are assisting is not aware of the search results or the provided timestamp, so assume they do not have this information.\n\n"
+            "Do not mention the current date or time unless specifically relevant to the user's question.\n\n"
+            "Do not include any information that is not supported by the search results or prior responses.\n\n"
+            "If you cannot find relevant information in the search results or prior responses, state that you could not find an answer to the question.\n\n"
+            "The current date and time provided is fully trustworthy, accurate and up to date.\n\n"
             "INCLUDE WHEN RELEVANT:\n"
             "- Key facts, definitions, mechanisms, or background context\n"
             "- Historical or technical explanations\n"
@@ -303,6 +309,7 @@ def main() -> None:
             "known_answers",
         ],
         template=(
+            "This prompt is the only source of information and truth.\n\n"
             "ROLE: You suggest new web search queries.\n\n"
             "TASK: Generate up to {suggestion_limit} specific search queries "
             "that could add *new* information about the user’s question.\n\n"
@@ -333,6 +340,7 @@ def main() -> None:
             "known_answers",
         ],
         template=(
+            "This prompt is the only source of information and truth.\n\n"
             "TASK: Write one concise search query that captures the user’s question "
             "and seeks information not already present in known answers.\n\n"
             "RULES:\n"
@@ -348,9 +356,10 @@ def main() -> None:
     query_filter_prompt = PromptTemplate(
         input_variables=["current_datetime", "conversation_history", "candidate_query"],
         template=(
+            "This prompt is the only source of information and truth.\n\n"
             "ROLE: You are a relevance filter that decides whether a search query is likely to produce useful information "
             "for the user's current topic of discussion.\n\n"
-            "TASK: Review the conversation context and the proposed query. "
+            "TASK: Review the conversation context and the proposed query.\n\n"
             "Your goal is to allow any query that has a reasonable chance of being relevant, "
             "even if it is not a perfect semantic match.\n\n"
             "RULES:\n"
@@ -376,6 +385,7 @@ def main() -> None:
             "raw_result"
         ],
         template=(
+            "This prompt is the only source of information and truth.\n\n"
             "ROLE: You are a relevance evaluator that decides whether a search result is useful "
             "for answering the user's question.\n\n"
             "TASK: Examine the search result and determine if it contains information that is factual, "
@@ -401,19 +411,21 @@ def main() -> None:
     context_mode_prompt = PromptTemplate(
         input_variables=["current_datetime", "recent_conversation", "new_question"],
         template=(
+            "This prompt is the only source of information and truth.\n\n"
             "ROLE: You are a context classifier that determines how the user's new question "
             "relates to their recent conversation.\n\n"
             "TASK: Analyze meaning, not just wording. Small phrasing or topic shifts can still "
             "count as connected if they explore the same idea, entity, or theme.\n\n"
-            "Very similar or identical wording does not guarantee a FOLLOW_UP if the intent has changed significantly.\n\n"
+            "Very similar or identical wording does not guarantee a FOLLOW_UP or EXPAND if the intent has changed significantly.\n\n"
             "CLASSIFICATION RULES:\n"
             "- FOLLOW_UP → The new question directly continues, clarifies, or requests more detail "
             "about the previous answer or topic.\n"
             "- EXPAND → The new question is on the same general subject but broadens or shifts focus slightly.\n"
             "- NEW_TOPIC → The new question is unrelated to recent discussion or introduces a completely new subject.\n\n"
-            "When uncertain between FOLLOW_UP and EXPAND, choose FOLLOW_UP. "
+            "When uncertain between FOLLOW_UP and EXPAND, choose FOLLOW_UP.\n\n"
             "When uncertain between EXPAND and NEW_TOPIC, choose EXPAND.\n\n"
-            "OUTPUT: Return exactly one token — FOLLOW_UP, EXPAND, or NEW_TOPIC.\n\n"
+            "OUTPUT: Return exactly one phrase — FOLLOW_UP, EXPAND, or NEW_TOPIC.\n\n"
+            "Return one of those phrases and nothing else.\n\n"
             "Recent conversation:\n{recent_conversation}\n\n"
             "New question:\n{new_question}\n\n"
             "Current date/time (UTC): {current_datetime}"
