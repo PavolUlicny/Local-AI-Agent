@@ -234,19 +234,41 @@ def _select_topic(
     return None, [], set(base_keywords)
 
 def main() -> None:
+    
+    #settings
     max_context_turns = 8
     max_search_rounds = 12
     max_followup_suggestions = 6
     used_model = "cogito:8b"
-
-    llm = OllamaLLM(
+    num_predict_ = 16384
+    num_ctx_ = 16384
+    
+    robot_temperature = 0.1
+    assistant_temperature = 0.7
+    robot_top_p_ = 0.4
+    assistant_top_p_ = 0.8
+    robot_top_k_ = 20
+    assistant_top_k_ = 80
+    robot_repeat_penalty_ = 1.1
+    assistant_repeat_penalty_ = 1.2
+    
+    llm_robot = OllamaLLM(
         model=used_model,
-        temperature=0.60,
-        top_p=0.9,
-        top_k=40,
-        repeat_penalty=1.2,
-        num_predict=16384,
-        num_ctx=16384,
+        temperature=robot_temperature,
+        top_p=robot_top_p_,
+        top_k=robot_top_k_,
+        repeat_penalty=robot_repeat_penalty_,
+        num_predict=num_predict_,
+        num_ctx=num_ctx_,
+    )
+    llm_assistant = OllamaLLM(
+        model=used_model,
+        temperature=assistant_temperature,
+        top_p=assistant_top_p_,
+        top_k=assistant_top_k_,
+        repeat_penalty=assistant_repeat_penalty_,
+        num_predict=num_predict_,
+        num_ctx=num_ctx_,
     )
     search = DuckDuckGoSearchRun(
         api_wrapper=DuckDuckGoSearchAPIWrapper(region="us-en", safesearch="moderate")
@@ -457,7 +479,7 @@ def main() -> None:
                 recent_history,
                 topic_keywords,
             ) = _select_topic(
-                llm,
+                llm_robot,
                 context_mode_prompt,
                 topics,
                 user_query,
@@ -496,7 +518,7 @@ def main() -> None:
 
         primary_search_query = user_query
         try:
-            seed_response = llm.invoke(
+            seed_response = llm_robot.invoke(
                 seed_prompt.format(
                     current_datetime=current_datetime,
                     conversation_history=conversation_text,
@@ -535,7 +557,7 @@ def main() -> None:
             relevant = _is_relevant(result_text, topic_keywords)
             if not relevant:
                 topic_keywords_text = ", ".join(sorted(topic_keywords)) if topic_keywords else "None"
-                relevance_raw = llm.invoke(
+                relevance_raw = llm_robot.invoke(
                     result_filter_prompt.format(
                         current_datetime=current_datetime,
                         user_question=user_query,
@@ -573,7 +595,7 @@ def main() -> None:
                 results_to_date, MAX_SEARCH_RESULTS_CHARS
             )
 
-            suggestions_raw = llm.invoke(
+            suggestions_raw = llm_robot.invoke(
                 planning_prompt.format(
                     current_datetime=current_datetime,
                     conversation_history=conversation_text,
@@ -596,7 +618,7 @@ def main() -> None:
 
             for candidate in new_queries:
                 if candidate not in pending_queries and len(pending_queries) < max_rounds:
-                    verdict_raw = llm.invoke(
+                    verdict_raw = llm_robot.invoke(
                         query_filter_prompt.format(
                             current_datetime=current_datetime,
                             candidate_query=candidate,
@@ -627,7 +649,7 @@ def main() -> None:
         )
 
         try:
-            response_stream = llm.stream(formatted_prompt)
+            response_stream = llm_assistant.stream(formatted_prompt)
         except ResponseError as exc:
             message = str(exc)
             if "not found" in message.lower():
