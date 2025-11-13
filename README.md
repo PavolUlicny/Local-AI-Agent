@@ -171,14 +171,6 @@ Search region/safesearch: These are set in-code to `us-en` and `moderate`. Edit 
 - `src/localAiAgent.py`: Main entry point with prompts, search planning, filtering, and answer synthesis.
 - `LICENSE`: Unlicense — public domain dedication.
 
-## Roadmap Ideas
-
-- Add `.env`/CLI configuration and profiles.
-- Pluggable search backends (e.g., Brave, Google CSE, local docs).
-- Caching layer for search results.
-- Optional RAG with local document stores.
-- Unit tests for prompt flows and filters.
-
 ## License
 
 This project is released under the Unlicense (public domain). See `LICENSE`.
