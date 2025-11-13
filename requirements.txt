@@ -1,0 +1,11 @@
+# Core libraries
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-ollama>=0.1.0
+
+# Search
+duckduckgo-search>=5.0.0
+
+# Local Ollama Python bindings (separate from the Ollama runtime)
+ollama>=0.1.0
