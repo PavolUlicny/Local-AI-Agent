@@ -52,9 +52,9 @@ Alternatives:
 ```bash
 ollama pull llama3.1:8b
 ollama pull mistral:7b
+```
 
 Note: If `cogito:8b` isn't available on your system, pick one of the alternatives (for example, `llama3.1:8b`) and update `used_model` in `src/localAiAgent.py` accordingly.
-```
 
 3. Create and activate a Python env
 
@@ -113,7 +113,7 @@ Optional: verify your model responds before running the agent:
 ```bash
 ollama run <your-model> -p "hello"
 # e.g.
-ollama run llama3.1:8b -p "hello"
+ollama run cogito:8b -p "hello"
 ```
 
 ## Configuration
@@ -129,6 +129,8 @@ Most knobs live in `main()` inside `src/localAiAgent.py`:
 To change these, edit `src/localAiAgent.py` and re-run. If you prefer environment variables, you can add a small parsing layer or open an issue/PR.
 
 Important: The defaults `num_ctx_ = 16384` and `num_predict_ = 16384` are intentionally high and may exceed some models' limits. If you encounter context/window or token-limit errors, reduce them (for example to `8192`/`4096`) to match your model's capabilities and available memory.
+
+Search region/safesearch: These are set in-code to `us-en` and `moderate`. Edit the `DuckDuckGoSearchAPIWrapper(region="us-en", safesearch="moderate")` line in `src/localAiAgent.py` to change them.
 
 ## Usage Tips
 
