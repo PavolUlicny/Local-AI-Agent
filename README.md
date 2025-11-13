@@ -86,6 +86,12 @@ Notes:
 
 ## Quick Start
 
+Start the Ollama server (in a separate terminal):
+
+```bash
+ollama serve
+```
+
 Run the agent from the project root:
 
 ```bash
@@ -118,7 +124,7 @@ To change these, edit `src/localAiAgent.py` and re-run. If you prefer environmen
   - Install: `pip install -U langchain-ollama`
 
 - **Ollama not found / not running**
-  - Ensure the binary is installed and the service is active. Try: `ollama list` and `ollama run llama3.1:8b`.
+  - Ensure the binary is installed and the service is active. Start it if needed: `ollama serve`. You can verify with `ollama list` or run a quick test: `ollama run llama3.1:8b`.
 
 - **Model not found**
   - Pull it first: `ollama pull cogito:8b` (or change `used_model` to an installed one).
