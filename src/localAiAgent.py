@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from importlib import import_module
 import re
 from typing import List, Optional, Set, Tuple
+from langchain_core.output_parsers import StrOutputParser
 
 def _resolve_prompt_template():
     module_paths = [
@@ -39,9 +40,12 @@ from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
 try:
-    from ollama._types import ResponseError
+    from ollama import ResponseError
 except ImportError:
-    ResponseError = Exception
+    try:
+        from ollama._types import ResponseError
+    except ImportError:
+        ResponseError = Exception
 
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9']+")
 _STOP_WORDS: Set[str] = {
@@ -90,6 +94,7 @@ MAX_CONVERSATION_CHARS = 22500
 MAX_PRIOR_RESPONSE_CHARS = 13000
 MAX_SEARCH_RESULTS_CHARS = 32500
 MAX_TURN_KEYWORD_SOURCE_CHARS = 17500
+MAX_TOPICS = 20
 
 def _truncate_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
@@ -109,6 +114,23 @@ def _normalize_context_decision(value: str) -> str:
 
 def _current_datetime_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+def _is_context_length_error(message: str) -> bool:
+    msg = message.lower()
+    indicators = [
+        "context length",
+        "context window",
+        "max context",
+        "maximum context",
+        "over maximum",
+        "too many tokens",
+        "token limit",
+        "sequence length",
+        "ctx length",
+        "prompt too long",
+        "input too long",
+    ]
+    return any(ind in msg for ind in indicators)
 
 def _pick_seed_query(seed_text: str, fallback: str) -> str:
     banned = {
@@ -191,8 +213,7 @@ def _collect_prior_responses(
     return "\n\n---\n\n".join(snippets) or "No prior answers for this topic."
 
 def _select_topic(
-    llm: OllamaLLM,
-    context_prompt: object,
+    context_chain: object,
     topics: List[Topic],
     question: str,
     base_keywords: Set[str],
@@ -215,12 +236,12 @@ def _select_topic(
     for _, idx in top_candidates:
         topic = topics[idx]
         recent_turns = topic.turns[-max_context_turns:]
-        decision_raw = llm.invoke(
-            context_prompt.format(
-                recent_conversation=_format_turns(recent_turns, "No prior conversation."),
-                new_question=question,
-                current_datetime=current_datetime,
-            )
+        decision_raw = context_chain.invoke(
+            {
+                "recent_conversation": _format_turns(recent_turns, "No prior conversation."),
+                "new_question": question,
+                "current_datetime": current_datetime,
+            }
         )
         normalized = _normalize_context_decision(str(decision_raw))
         decisions.append((normalized, idx, recent_turns))
@@ -454,7 +475,42 @@ def main() -> None:
         ),
     )
 
+    context_chain = context_mode_prompt | llm_robot | StrOutputParser()
+    seed_chain = seed_prompt | llm_robot | StrOutputParser()
+    planning_chain = planning_prompt | llm_robot | StrOutputParser()
+    result_filter_chain = result_filter_prompt | llm_robot | StrOutputParser()
+    query_filter_chain = query_filter_prompt | llm_robot | StrOutputParser()
+
     topics: List[Topic] = []
+
+    def _rebuild_llms(new_num_ctx: int, new_num_predict: int) -> None:
+        nonlocal llm_robot, llm_assistant, num_ctx_, num_predict_, context_chain, seed_chain, planning_chain, result_filter_chain, query_filter_chain
+        num_ctx_ = new_num_ctx
+        num_predict_ = new_num_predict
+        llm_robot = OllamaLLM(
+            model=used_model,
+            temperature=robot_temperature,
+            top_p=robot_top_p_,
+            top_k=robot_top_k_,
+            repeat_penalty=robot_repeat_penalty_,
+            num_predict=num_predict_,
+            num_ctx=num_ctx_,
+        )
+        llm_assistant = OllamaLLM(
+            model=used_model,
+            temperature=assistant_temperature,
+            top_p=assistant_top_p_,
+            top_k=assistant_top_k_,
+            repeat_penalty=assistant_repeat_penalty_,
+            num_predict=num_predict_,
+            num_ctx=num_ctx_,
+        )
+        
+        context_chain = context_mode_prompt | llm_robot | StrOutputParser()
+        seed_chain = seed_prompt | llm_robot | StrOutputParser()
+        planning_chain = planning_prompt | llm_robot | StrOutputParser()
+        result_filter_chain = result_filter_prompt | llm_robot | StrOutputParser()
+        query_filter_chain = query_filter_prompt | llm_robot | StrOutputParser()
 
     while True:
         try:
@@ -479,8 +535,7 @@ def main() -> None:
                 recent_history,
                 topic_keywords,
             ) = _select_topic(
-                llm_robot,
-                context_mode_prompt,
+                context_chain,
                 topics,
                 user_query,
                 question_keywords,
@@ -518,13 +573,13 @@ def main() -> None:
 
         primary_search_query = user_query
         try:
-            seed_response = llm_robot.invoke(
-                seed_prompt.format(
-                    current_datetime=current_datetime,
-                    conversation_history=conversation_text,
-                    user_question=user_query,
-                    known_answers=prior_responses_text,
-                )
+            seed_response = seed_chain.invoke(
+                {
+                    "current_datetime": current_datetime,
+                    "conversation_history": conversation_text,
+                    "user_question": user_query,
+                    "known_answers": prior_responses_text,
+                }
             )
             seed_text = str(seed_response).strip()
             primary_search_query = _pick_seed_query(seed_text, user_query)
@@ -536,7 +591,28 @@ def main() -> None:
                     "before retrying."
                 )
                 return
-            raise
+            if _is_context_length_error(message):
+                reduced_ctx = max(2048, num_ctx_ // 2)
+                reduced_predict = max(512, min(num_predict_, reduced_ctx // 2))
+                print(
+                    f"Context too large; retrying with num_ctx={reduced_ctx}, num_predict={reduced_predict}."
+                )
+                _rebuild_llms(reduced_ctx, reduced_predict)
+                try:
+                    seed_response = seed_chain.invoke(
+                        {
+                            "current_datetime": current_datetime,
+                            "conversation_history": conversation_text,
+                            "user_question": user_query,
+                            "known_answers": prior_responses_text,
+                        }
+                    )
+                    seed_text = str(seed_response).strip()
+                    primary_search_query = _pick_seed_query(seed_text, user_query)
+                except ResponseError:
+                    primary_search_query = user_query
+            else:
+                raise
 
         pending_queries: List[str] = [primary_search_query]
         if not topic_keywords:
@@ -547,7 +623,12 @@ def main() -> None:
         round_index = 0
         while round_index < len(pending_queries) and round_index < max_rounds:
             current_query = pending_queries[round_index]
-            result_raw = search.run(current_query)
+            try:
+                result_raw = search.run(current_query)
+            except Exception as exc:
+                print(f"Search error for '{current_query}': {exc}")
+                round_index += 1
+                continue
             result_text = str(result_raw or "")
             normalized_result = result_text.strip()
             if normalized_result and normalized_result in seen_results:
@@ -557,17 +638,56 @@ def main() -> None:
             relevant = _is_relevant(result_text, topic_keywords)
             if not relevant:
                 topic_keywords_text = ", ".join(sorted(topic_keywords)) if topic_keywords else "None"
-                relevance_raw = llm_robot.invoke(
-                    result_filter_prompt.format(
-                        current_datetime=current_datetime,
-                        user_question=user_query,
-                        search_query=current_query,
-                        raw_result=result_text,
-                        known_answers=prior_responses_text,
-                        topic_keywords=topic_keywords_text,
+                try:
+                    relevance_raw = result_filter_chain.invoke(
+                        {
+                            "current_datetime": current_datetime,
+                            "user_question": user_query,
+                            "search_query": current_query,
+                            "raw_result": result_text,
+                            "known_answers": prior_responses_text,
+                            "topic_keywords": topic_keywords_text,
+                        }
                     )
-                )
-                relevance_decision = str(relevance_raw).strip().upper()
+                    relevance_decision = str(relevance_raw).strip().upper()
+                except ResponseError as exc:
+                    message = str(exc)
+                    if "not found" in message.lower():
+                        print(
+                            f"Model '{used_model}' not found. Run 'ollama pull {used_model}' in a terminal "
+                            "before retrying."
+                        )
+                        return
+                    if _is_context_length_error(message):
+                        reduced_ctx = max(2048, num_ctx_ // 2)
+                        reduced_predict = max(512, min(num_predict_, reduced_ctx // 2))
+                        print(
+                            f"Context too large during relevance check; retrying with num_ctx={reduced_ctx}, num_predict={reduced_predict}."
+                        )
+                        _rebuild_llms(reduced_ctx, reduced_predict)
+                        try:
+                            relevance_raw = result_filter_chain.invoke(
+                                {
+                                    "current_datetime": current_datetime,
+                                    "user_question": user_query,
+                                    "search_query": current_query,
+                                    "raw_result": result_text,
+                                    "known_answers": prior_responses_text,
+                                    "topic_keywords": topic_keywords_text,
+                                }
+                            )
+                            relevance_decision = str(relevance_raw).strip().upper()
+                        except ResponseError:
+                            print(
+                                f"Relevance retry failed; skipping result for '{current_query}'."
+                            )
+                            relevance_decision = "NO"
+                        
+                    else:
+                        print(
+                            f"Relevance check failed; skipping result for '{current_query}'. Error: {exc}"
+                        )
+                        relevance_decision = "NO"
                 if relevance_decision.startswith("YES"):
                     relevant = True
                 else:
@@ -595,20 +715,53 @@ def main() -> None:
                 results_to_date, MAX_SEARCH_RESULTS_CHARS
             )
 
-            suggestions_raw = llm_robot.invoke(
-                planning_prompt.format(
-                    current_datetime=current_datetime,
-                    conversation_history=conversation_text,
-                    user_question=user_query,
-                    results_to_date=results_to_date,
-                    suggestion_limit=suggestion_limit,
-                    known_answers=prior_responses_text,
+            try:
+                suggestions_raw = planning_chain.invoke(
+                    {
+                        "current_datetime": current_datetime,
+                        "conversation_history": conversation_text,
+                        "user_question": user_query,
+                        "results_to_date": results_to_date,
+                        "suggestion_limit": suggestion_limit,
+                        "known_answers": prior_responses_text,
+                    }
                 )
-            )
+            except ResponseError as exc:
+                message = str(exc)
+                if "not found" in message.lower():
+                    print(
+                        f"Model '{used_model}' not found. Run 'ollama pull {used_model}' in a terminal "
+                        "before retrying."
+                    )
+                    return
+                if _is_context_length_error(message):
+                    reduced_ctx = max(2048, num_ctx_ // 2)
+                    reduced_predict = max(512, min(num_predict_, reduced_ctx // 2))
+                    print(
+                        f"Context too large during planning; retrying with num_ctx={reduced_ctx}, num_predict={reduced_predict}."
+                    )
+                    _rebuild_llms(reduced_ctx, reduced_predict)
+                    try:
+                        suggestions_raw = planning_chain.invoke(
+                            {
+                                "current_datetime": current_datetime,
+                                "conversation_history": conversation_text,
+                                "user_question": user_query,
+                                "results_to_date": results_to_date,
+                                "suggestion_limit": suggestion_limit,
+                                "known_answers": prior_responses_text,
+                            }
+                        )
+                    except ResponseError:
+                        print("Planning retry failed; skipping follow-up suggestions this round.")
+                        suggestions_raw = "NONE"
+                else:
+                    print(f"Could not plan follow-up searches: {exc}")
+                    suggestions_raw = "NONE"
 
             new_queries: List[str] = []
             for line in str(suggestions_raw).splitlines():
-                normalized = line.strip().strip("-*\"").strip()
+                normalized = line.strip().strip("-*\"'").strip()
                 if not normalized:
                     continue
                 if normalized.lower() == "none":
@@ -618,13 +771,43 @@ def main() -> None:
 
             for candidate in new_queries:
                 if candidate not in pending_queries and len(pending_queries) < max_rounds:
-                    verdict_raw = llm_robot.invoke(
-                        query_filter_prompt.format(
-                            current_datetime=current_datetime,
-                            candidate_query=candidate,
-                            conversation_history=conversation_text,
+                    try:
+                        verdict_raw = query_filter_chain.invoke(
+                            {
+                                "current_datetime": current_datetime,
+                                "candidate_query": candidate,
+                                "conversation_history": conversation_text,
+                            }
                         )
-                    )
+                    except ResponseError as exc:
+                        message = str(exc)
+                        if "not found" in message.lower():
+                            print(
+                                f"Model '{used_model}' not found. Run 'ollama pull {used_model}' in a terminal "
+                                "before retrying."
+                            )
+                            return
+                        if _is_context_length_error(message):
+                            reduced_ctx = max(2048, num_ctx_ // 2)
+                            reduced_predict = max(512, min(num_predict_, reduced_ctx // 2))
+                            print(
+                                f"Context too large during query filter; retrying with num_ctx={reduced_ctx}, num_predict={reduced_predict}."
+                            )
+                            _rebuild_llms(reduced_ctx, reduced_predict)
+                            try:
+                                verdict_raw = query_filter_chain.invoke(
+                                    {
+                                        "current_datetime": current_datetime,
+                                        "candidate_query": candidate,
+                                        "conversation_history": conversation_text,
+                                    }
+                                )
+                            except ResponseError:
+                                print(f"Skipping suggestion after retry: {candidate}")
+                                continue
+                        else:
+                            print(f"Skipping suggestion due to filter error: {candidate} ({exc})")
+                            continue
                     verdict = str(verdict_raw).strip().upper()
                     if verdict.startswith("YES"):
                         pending_queries.append(candidate)
@@ -640,16 +823,18 @@ def main() -> None:
             search_results_text, MAX_SEARCH_RESULTS_CHARS
         )
 
-        formatted_prompt = response_prompt.format(
-            current_datetime=current_datetime,
-            conversation_history=conversation_text,
-            search_results=search_results_text,
-            user_question=user_query,
-            prior_responses=prior_responses_text,
-        )
+        inputs = {
+            "current_datetime": current_datetime,
+            "conversation_history": conversation_text,
+            "search_results": search_results_text,
+            "user_question": user_query,
+            "prior_responses": prior_responses_text,
+        }
+
+        chain = response_prompt | llm_assistant | StrOutputParser()
 
         try:
-            response_stream = llm_assistant.stream(formatted_prompt)
+            response_stream = chain.stream(inputs)
         except ResponseError as exc:
             message = str(exc)
             if "not found" in message.lower():
@@ -658,14 +843,27 @@ def main() -> None:
                     "before retrying."
                 )
                 return
-            raise
+            if _is_context_length_error(message):
+                reduced_ctx = max(2048, num_ctx_ // 2)
+                reduced_predict = max(512, min(num_predict_, reduced_ctx // 2))
+                print(
+                    f"Context too large while generating answer; retrying with num_ctx={reduced_ctx}, num_predict={reduced_predict}."
+                )
+                _rebuild_llms(reduced_ctx, reduced_predict)
+                try:
+                    chain = response_prompt | llm_assistant | StrOutputParser()
+                    response_stream = chain.stream(inputs)
+                except ResponseError as exc2:
+                    print(f"Answer generation failed after retry: {exc2}")
+                    return
+            else:
+                raise
 
         print("\n[Answer]")
         response_chunks: List[str] = []
         for chunk in response_stream:
-            text_chunk = str(chunk)
-            response_chunks.append(text_chunk)
-            print(text_chunk, end="", flush=True)
+            response_chunks.append(chunk)
+            print(chunk, end="", flush=True)
 
         if response_chunks and not response_chunks[-1].endswith("\n"):
             print()
@@ -675,6 +873,15 @@ def main() -> None:
         if selected_topic_index is None:
             topics.append(Topic(keywords=set(topic_keywords)))
             selected_topic_index = len(topics) - 1
+
+        if selected_topic_index != len(topics) - 1:
+            moved_topic = topics.pop(selected_topic_index)
+            topics.append(moved_topic)
+            selected_topic_index = len(topics) - 1
+
+        while len(topics) > MAX_TOPICS:
+            topics.pop(0)
+            selected_topic_index = max(0, selected_topic_index - 1)
 
         topic_entry = topics[selected_topic_index]
         topic_entry.turns.append((user_query, response_text))
