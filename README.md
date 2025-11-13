@@ -39,13 +39,18 @@ curl -fsSL https://ollama.com/install.sh | sh
 # Or follow official instructions for your platform: https://ollama.com/download
 ```
 
-1. Pull a model (examples)
+1. Pull a model
+
+Recommended (used by this project):
 
 ```bash
 ollama pull cogito:8b
-# or
+```
+
+Alternatives:
+
+```bash
 ollama pull llama3.1:8b
-# or
 ollama pull mistral:7b
 ```
 
@@ -62,7 +67,6 @@ python -m pip install --upgrade pip
 Primary (recommended):
 
 ```bash
-python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
