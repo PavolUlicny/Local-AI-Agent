@@ -124,6 +124,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--assistant-top-k", type=int, default=80, help="Top-k for assistant LLM")
     parser.add_argument("--robot-repeat-penalty", type=float, default=1.1, help="Repeat penalty for robot LLM")
     parser.add_argument("--assistant-repeat-penalty", type=float, default=1.2, help="Repeat penalty for assistant LLM")
+    parser.add_argument("--ddg-region", default="us-en", help="DuckDuckGo region, e.g. us-en, uk-en, de-de")
+    parser.add_argument("--ddg-safesearch", default="moderate", choices=["off", "moderate", "strict"], help="DuckDuckGo safesearch level")
+    parser.add_argument("--ddg-backend", default="html", choices=["html", "lite", "api"], help="DuckDuckGo backend to use")
+    parser.add_argument("--search-max-results", type=int, default=5, help="Max results to fetch per query")
+    parser.add_argument("--search-retries", type=int, default=4, help="Retry attempts for transient search errors")
     parser.add_argument("--log-level", default="WARNING", help="Logging level: DEBUG, INFO, WARNING, ERROR")
     parser.add_argument("--log-file", default=None, help="Optional log file path")
     parser.add_argument("--question", default=None, help="Run once with this question and exit")
@@ -162,6 +167,11 @@ def main(args: argparse.Namespace | None = None) -> None:
     used_model = args.model
     num_predict_ = args.num_predict
     num_ctx_ = args.num_ctx
+    ddg_region = args.ddg_region
+    ddg_safesearch = args.ddg_safesearch
+    ddg_backend = args.ddg_backend
+    search_max_results = args.search_max_results
+    search_retries = args.search_retries
     
     robot_temperature = args.robot_temp
     assistant_temperature = args.assistant_temp
@@ -190,7 +200,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         num_predict=num_predict_,
         num_ctx=num_ctx_,
     )
-    search_api = DuckDuckGoSearchAPIWrapper(region="us-en", safesearch="moderate", backend="html")
+    search_api = DuckDuckGoSearchAPIWrapper(region=ddg_region, safesearch=ddg_safesearch, backend=ddg_backend)
 
     rebuild_counts = {
         "search_decision": 0,
@@ -466,7 +476,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             while round_index < len(pending_queries) and round_index < max_rounds:
                 current_query = pending_queries[round_index]
                 # Multi-result search: fetch top N results and evaluate each
-                results_list = _ddg_results(current_query, max_results=5)
+                results_list = _ddg_results(current_query, max_results=search_max_results, retries=search_retries)
 
                 # Iterate each result item
                 accepted_any = False
