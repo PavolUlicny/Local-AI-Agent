@@ -173,7 +173,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 
 ## Installation
 
-Requires a working [Ollama](https://ollama.com/) runtime with the target model pulled.
+Requires a working [Ollama](https://ollama.com/) runtime.
 
 In one terminal:
 
