@@ -20,12 +20,15 @@ except ImportError as exc:
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
 try:
-    from ollama import ResponseError
+    from ollama import ResponseError as _OllamaResponseError
+    ResponseError = _OllamaResponseError
 except ImportError:
     try:
-        from ollama._types import ResponseError
+        from ollama._types import ResponseError as _OllamaResponseError
+        ResponseError = _OllamaResponseError
     except ImportError:
-        ResponseError = Exception
+        class ResponseError(Exception):
+            pass
 
 # Imports from our split modules (prompts, helpers)
 try:
@@ -326,6 +329,11 @@ def main(args: argparse.Namespace | None = None) -> None:
             selected_topic_index = None
             recent_history = []
             topic_keywords = set(question_keywords)
+        except Exception as exc:
+            logging.warning(f"Context classification failed; proceeding without topic selection. Error: {exc}")
+            selected_topic_index = None
+            recent_history = []
+            topic_keywords = set(question_keywords)
 
         conversation_text = _format_turns(
             recent_history, "No prior relevant conversation."
@@ -385,15 +393,16 @@ def main(args: argparse.Namespace | None = None) -> None:
                             decision_validated = _regex_validate(str(decision_raw), _PATTERN_SEARCH_DECISION, "SEARCH")
                             should_search = decision_validated == "SEARCH"
                         except ResponseError:
-                            should_search = True
+                            should_search = False
                     else:
-                        logging.info("Reached search decision rebuild cap; defaulting to SEARCH fallback.")
-                        should_search = True
+                        logging.info("Reached search decision rebuild cap; defaulting to NO_SEARCH fallback.")
+                        should_search = False
                 else:
-                    should_search = True
+                    logging.warning("Search decision failed with non-context error; defaulting to NO_SEARCH.")
+                    should_search = False
             except Exception as exc:
-                logging.warning(f"Search decision failed unexpectedly; defaulting to SEARCH. Error: {exc}")
-                should_search = True
+                logging.warning(f"Search decision failed unexpectedly; defaulting to NO_SEARCH. Error: {exc}")
+                should_search = False
 
         if should_search:
             primary_search_query = user_query
