@@ -190,7 +190,6 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
-ollama serve &
 ollama pull cogito:8b   # or your chosen model
 ```
 
