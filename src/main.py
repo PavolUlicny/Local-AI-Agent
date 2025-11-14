@@ -187,7 +187,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         num_predict=num_predict_,
         num_ctx=num_ctx_,
     )
-    search_api = DuckDuckGoSearchAPIWrapper(region="us-en", safesearch="moderate")
+    search_api = DuckDuckGoSearchAPIWrapper(region="us-en", safesearch="moderate", backend="html")
 
     rebuild_counts = {
         "search_decision": 0,
