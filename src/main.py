@@ -157,7 +157,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         args = parser.parse_args()
     _configure_logging(args.log_level, args.log_file)
     
-    #settings (configurable via CLI)
+    # Settings (configurable via CLI)
     max_context_turns = args.max_context_turns
     max_search_rounds = args.max_rounds
     max_followup_suggestions = args.max_followup_suggestions
