@@ -362,13 +362,12 @@ def main(args: argparse.Namespace | None = None) -> None:
                 decision_validated = _regex_validate(str(decision_raw), _PATTERN_SEARCH_DECISION, "SEARCH")
                 should_search = decision_validated == "SEARCH"
             except ResponseError as exc:
-                message = str(exc)
-                if "not found" in message.lower():
+                if "not found" in str(exc).lower():
                     logging.error(
                         f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                     )
                     return
-                if _is_context_length_error(message):
+                if _is_context_length_error(str(exc)):
                     if rebuild_counts["search_decision"] < MAX_REBUILD_RETRIES:
                         _reduce_context_and_rebuild("search_decision", "search decision")
                         try:
@@ -413,13 +412,12 @@ def main(args: argparse.Namespace | None = None) -> None:
                 seed_text = str(seed_response).strip()
                 primary_search_query = _pick_seed_query(seed_text, user_query)
             except ResponseError as exc:
-                message = str(exc)
-                if "not found" in message.lower():
+                if "not found" in str(exc).lower():
                     logging.error(
                         f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                     )
                     return
-                if _is_context_length_error(message):
+                if _is_context_length_error(str(exc)):
                     if rebuild_counts["seed"] < MAX_REBUILD_RETRIES:
                         _reduce_context_and_rebuild("seed", "seed")
                         try:
@@ -518,13 +516,12 @@ def main(args: argparse.Namespace | None = None) -> None:
                             relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
                             relevance_llm_checks += 1
                         except ResponseError as exc:
-                            message = str(exc)
-                            if "not found" in message.lower():
+                            if "not found" in str(exc).lower():
                                 logging.error(
                                     f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                                 )
                                 return
-                            if _is_context_length_error(message):
+                            if _is_context_length_error(str(exc)):
                                 if rebuild_counts["relevance"] < MAX_REBUILD_RETRIES:
                                     _reduce_context_and_rebuild("relevance", "relevance")
                                     try:
@@ -605,13 +602,12 @@ def main(args: argparse.Namespace | None = None) -> None:
                         }
                     )
                 except ResponseError as exc:
-                    message = str(exc)
-                    if "not found" in message.lower():
+                    if "not found" in str(exc).lower():
                         logging.error(
                             f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                         )
                         return
-                    if _is_context_length_error(message):
+                    if _is_context_length_error(str(exc)):
                         if rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
                             rebuild_counts["planning"] += 1
                             reduced_ctx = max(2048, num_ctx_ // 2)
@@ -677,13 +673,12 @@ def main(args: argparse.Namespace | None = None) -> None:
                             }
                         )
                     except ResponseError as exc:
-                        message = str(exc)
-                        if "not found" in message.lower():
+                        if "not found" in str(exc).lower():
                             logging.error(
                                 f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                             )
                             return
-                        if _is_context_length_error(message):
+                        if _is_context_length_error(str(exc)):
                             if rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
                                 _reduce_context_and_rebuild("query_filter", "query filter")
                                 try:
@@ -742,13 +737,12 @@ def main(args: argparse.Namespace | None = None) -> None:
                             }
                         )
                     except ResponseError as exc:
-                        message = str(exc)
-                        if "not found" in message.lower():
+                        if "not found" in str(exc).lower():
                             logging.error(
                                 f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                             )
                             break
-                        if _is_context_length_error(message):
+                        if _is_context_length_error(str(exc)):
                             if rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
                                 _reduce_context_and_rebuild("planning", "planning")
                                 try:
@@ -808,13 +802,12 @@ def main(args: argparse.Namespace | None = None) -> None:
                                 }
                             )
                         except ResponseError as exc:
-                            message = str(exc)
-                            if "not found" in message.lower():
+                            if "not found" in str(exc).lower():
                                 logging.error(
                                     f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                                 )
                                 continue
-                            if _is_context_length_error(message):
+                            if _is_context_length_error(str(exc)):
                                 if rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
                                     _reduce_context_and_rebuild("query_filter", "query filter")
                                     try:
@@ -885,13 +878,12 @@ def main(args: argparse.Namespace | None = None) -> None:
         try:
             response_stream = chain.stream(inputs)
         except ResponseError as exc:
-            message = str(exc)
-            if "not found" in message.lower():
+            if "not found" in str(exc).lower():
                 logging.error(
                     f"Model '{used_model}' not found. Run 'ollama pull {used_model}' and retry."
                 )
                 return
-            if _is_context_length_error(message):
+            if _is_context_length_error(str(exc)):
                 if rebuild_counts["answer"] < MAX_REBUILD_RETRIES:
                     _reduce_context_and_rebuild("answer", "answer")
                     try:
