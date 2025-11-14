@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from importlib import import_module
 
-
 def _resolve_prompt_template():
     module_paths = [
         "langchain_core.prompts",
@@ -23,9 +22,7 @@ def _resolve_prompt_template():
         "Please ensure langchain>=0.0.200 or langchain-core is installed."
     )
 
-
 PromptTemplate = _resolve_prompt_template()
-
 
 # Prompt templates
 response_prompt_no_search = PromptTemplate(
