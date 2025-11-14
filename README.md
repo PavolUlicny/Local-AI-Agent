@@ -175,6 +175,14 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 
 Requires a working [Ollama](https://ollama.com/) runtime with the target model pulled.
 
+In one terminal:
+
+```bash
+ollama serve
+```
+
+In another terminal:
+
 ```bash
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
