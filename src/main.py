@@ -293,7 +293,8 @@ def main(args: argparse.Namespace | None = None) -> None:
             if args.question:
                 user_query = args.question.strip()
             else:
-                user_query = input("\nEnter your request (or 'exit' to quit): ").strip()
+                prompt_text = "\n\033[92mEnter your request (or 'exit' to quit): \033[0m"
+                user_query = input(prompt_text).strip()
         except (KeyboardInterrupt, EOFError):
             logging.info("Exiting due to interrupt/EOF.")
             return
@@ -920,7 +921,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             logging.error(f"Answer generation failed unexpectedly: {exc}")
             return
 
-        print("\n[Answer]")
+        print("\n\033[91m[Answer]\033[0m")
         response_chunks: List[str] = []
         try:
             for chunk in response_stream:
@@ -972,5 +973,4 @@ def main(args: argparse.Namespace | None = None) -> None:
             return
 
 if __name__ == "__main__":
-    # Delegate parsing and logging configuration to main()
     main()
