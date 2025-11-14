@@ -41,8 +41,8 @@ Design goals:
 - Seed query synthesis distinct from the raw user question to broaden retrieval.
 - Iterative planning of follow‑up search queries (bounded by `--max-rounds`).
 - Dual relevance filters:
-	- Lightweight keyword intersection check.
-	- LLM YES/NO validation for borderline cases (capped by `--max-relevance-llm-checks`).
+  - Lightweight keyword intersection check.
+  - LLM YES/NO validation for borderline cases (capped by `--max-relevance-llm-checks`).
 - Query gating (LLM YES/NO) to avoid off‑topic expansion.
 - Result deduplication (stable SHA‑1 hash + URL canonicalization).
 - Adaptive truncation of large text sections (conversation, prior answers, search corpus) with sensible cut heuristics.
@@ -68,27 +68,27 @@ High‑level components and their roles:
 
 ```text
 User Input
-	│
-	├─► Context Classification (FOLLOW_UP / EXPAND / NEW_TOPIC)
-	│       Select / create topic; gather recent turns & prior answers
-	│
-	├─► Search Decision (SEARCH / NO_SEARCH)
-	│       If NO_SEARCH → Answer directly
-	│       If SEARCH → proceed
-	│
-	├─► Seed Query Generation
-	│
-	├─► Iterative Round Loop (≤ max-rounds)
-	│       ├─► Execute Search (DuckDuckGo, N results)
-	│       ├─► Result Relevance Filter (keyword heuristic + LLM YES/NO)
-	│       ├─► Keyword Expansion & Dedup
-	│       ├─► Planning Prompt (propose new queries)
-	│       ├─► Query Filter Prompt (gate each candidate YES/NO)
-	│       └─► Optional Fill Attempts until capacity reached
-	│
-	├─► Aggregate & Truncate Results
-	│
-	└─► Final Answer Prompt (with or without search context)
+ │
+ ├─► Context Classification (FOLLOW_UP / EXPAND / NEW_TOPIC)
+ │       Select / create topic; gather recent turns & prior answers
+ │
+ ├─► Search Decision (SEARCH / NO_SEARCH)
+ │       If NO_SEARCH → Answer directly
+ │       If SEARCH → proceed
+ │
+ ├─► Seed Query Generation
+ │
+ ├─► Iterative Round Loop (≤ max-rounds)
+ │       ├─► Execute Search (DuckDuckGo, N results)
+ │       ├─► Result Relevance Filter (keyword heuristic + LLM YES/NO)
+ │       ├─► Keyword Expansion & Dedup
+ │       ├─► Planning Prompt (propose new queries)
+ │       ├─► Query Filter Prompt (gate each candidate YES/NO)
+ │       └─► Optional Fill Attempts until capacity reached
+ │
+ ├─► Aggregate & Truncate Results
+ │
+ └─► Final Answer Prompt (with or without search context)
 ```
 
 ## Modules & Responsibilities
@@ -119,12 +119,14 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 2. Generate a seed query (fallback to original if generation fails).
 3. Maintain a queue of pending queries (seed + planned follow‑ups) up to `--max-rounds`.
 4. For each query:
-	- Fetch `--search-max-results` results (with retry/backoff).
-	- Deduplicate by URL (canonicalized) and SHA‑1 hash of assembled title/snippet.
-	- Apply fast keyword intersection relevance; escalate borderline cases to LLM (YES/NO) within `--max-relevance-llm-checks` budget.
-	- Expand topic keyword set from accepted results.
-	- Plan new queries; gate each with query filter classifier.
-	- Perform fill cycles until either round capacity or attempt limits reached.
+
+- Fetch `--search-max-results` results (with retry/backoff).
+- Deduplicate by URL (canonicalized) and SHA‑1 hash of assembled title/snippet.
+- Apply fast keyword intersection relevance; escalate borderline cases to LLM (YES/NO) within `--max-relevance-llm-checks` budget.
+- Expand topic keyword set from accepted results.
+- Plan new queries; gate each with query filter classifier.
+- Perform fill cycles until either round capacity or attempt limits reached.
+
 5. Truncate aggregated corpus to `MAX_SEARCH_RESULTS_CHARS` before answer synthesis.
 
 ## Robustness & Error Handling
@@ -176,6 +178,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
+ollama serve
 ollama pull cogito:8b   # or your chosen model
 ```
 
