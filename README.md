@@ -44,7 +44,7 @@ Design goals:
   - Lightweight keyword intersection check.
   - LLM YES/NO validation for borderline cases (capped by `--max-relevance-llm-checks`).
 - Query gating (LLM YES/NO) to avoid off‑topic expansion.
-- Result deduplication (stable SHA‑1 hash + URL canonicalization).
+- Result deduplication (canonicalized URLs + SHA‑1 hash of assembled title/URL/snippet).
 - Adaptive truncation of large text sections (conversation, prior answers, search corpus) with sensible cut heuristics.
 - Multi‑topic memory with keyword pruning and turn window constraints.
 - Automatic recovery from context length errors (progressive halving of `num_ctx` and `num_predict`).
@@ -63,6 +63,8 @@ High‑level components and their roles:
 | Topic Manager (`helpers.Topic`) | Maintains per-topic turns & evolving keyword set. |
 | Keyword Utilities | Tokenization, stopword filtering, heuristic numeric filtering. |
 | Rebuild Logic | Detects context length errors and rebuilds prompt chains with reduced parameters. |
+
+Note: Robot and Assistant both use the same base model specified via `--model`, but with different temperatures and decoding parameters tailored to their roles.
 
 ## Execution Pipeline
 
@@ -121,7 +123,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 4. For each query:
 
 - Fetch `--search-max-results` results (with retry/backoff).
-- Deduplicate by URL (canonicalized) and SHA‑1 hash of assembled title/snippet.
+- Deduplicate by URL (canonicalized) and SHA‑1 hash of assembled title/URL/snippet.
 - Apply fast keyword intersection relevance; escalate borderline cases to LLM (YES/NO) within `--max-relevance-llm-checks` budget.
 - Expand topic keyword set from accepted results.
 - Plan new queries; gate each with query filter classifier.
@@ -136,6 +138,8 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 - Retries / exponential backoff for DuckDuckGo (rate limit or transient failures) with jitter.
 - Fallback paths: failing seed→use original query; failing planning→skip suggestions; failing relevance→drop result.
 - All LLM classifier outputs normalized & regex validated; defaults chosen to safe expansive path (e.g., default SEARCH if classification malformed).
+- If a classifier call itself errors (e.g., connection/model error), the agent falls back to NO_SEARCH for that turn; if the classifier returns malformed output, it defaults to SEARCH.
+- Context-length rebuilds are implemented for: search decision, seed generation, result relevance checks, planning, query filter, and final answer stages. Topic selection (context classification) does not rebuild on context errors; it proceeds without selecting a topic when needed.
 
 ## CLI Arguments
 
@@ -181,6 +185,10 @@ pip install -r requirements.txt
 ollama serve
 ollama pull cogito:8b   # or your chosen model
 ```
+
+Notes:
+
+- The Python package `ollama` in `requirements.txt` is only used for optional exception typing. LangChain communicates with the Ollama server directly; the pip package is not strictly required at runtime if the server is available (keeping it installed is harmless).
 
 ## Quick Start Examples
 
