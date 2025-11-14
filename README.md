@@ -186,7 +186,7 @@ In another terminal:
 ```bash
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
