@@ -152,7 +152,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 | `--max-followup-suggestions` | `6` | Max query suggestions per planning cycle. |
 | `--max-fill-attempts` | `3` | Extra planning passes to fill remaining slots. |
 | `--max-relevance-llm-checks` | `2` | LLM relevance validations for borderline results per query. |
-| `--num-ctx` | `8192` | Initial context window tokens. |
+| `--num-ctx` | `12288` | Initial context window tokens. |
 | `--num-predict` | `8192` | Initial generation cap tokens. |
 | `--robot-temp` | `0.0` | Temperature for classifier/planner chains. |
 | `--assistant-temp` | `0.7` | Temperature for final answer chain. |
