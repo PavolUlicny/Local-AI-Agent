@@ -114,7 +114,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-followup-suggestions", type=int, default=6, help="Max planning suggestions per cycle")
     parser.add_argument("--max-fill-attempts", type=int, default=3, help="How many planning fill attempts")
     parser.add_argument("--max-relevance-llm-checks", type=int, default=2, help="LLM checks allowed for borderline relevance")
-    parser.add_argument("--num-ctx", type=int, default=8192, help="Model context window tokens")
+    parser.add_argument("--num-ctx", type=int, default=12288, help="Model context window tokens")
     parser.add_argument("--num-predict", type=int, default=8192, help="Max tokens to predict")
     parser.add_argument("--robot-temp", type=float, default=0.0, help="Temperature for robot LLM")
     parser.add_argument("--assistant-temp", type=float, default=0.7, help="Temperature for assistant LLM")
