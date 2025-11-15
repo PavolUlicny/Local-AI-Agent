@@ -155,7 +155,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 | `--num-ctx` | `12288` | Initial context window tokens. |
 | `--num-predict` | `8192` | Initial generation cap tokens. |
 | `--robot-temp` | `0.0` | Temperature for classifier/planner chains. |
-| `--assistant-temp` | `0.7` | Temperature for final answer chain. |
+| `--assistant-temp` | `0.6` | Temperature for final answer chain. |
 | `--robot-top-p` | `0.4` | Top‑p for robot model. |
 | `--assistant-top-p` | `0.8` | Top‑p for assistant model. |
 | `--robot-top-k` | `20` | Top‑k for robot model. |

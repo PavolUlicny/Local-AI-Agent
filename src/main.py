@@ -117,7 +117,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-ctx", type=int, default=12288, help="Model context window tokens")
     parser.add_argument("--num-predict", type=int, default=8192, help="Max tokens to predict")
     parser.add_argument("--robot-temp", type=float, default=0.0, help="Temperature for robot LLM")
-    parser.add_argument("--assistant-temp", type=float, default=0.7, help="Temperature for assistant LLM")
+    parser.add_argument("--assistant-temp", type=float, default=0.6, help="Temperature for assistant LLM")
     parser.add_argument("--robot-top-p", type=float, default=0.4, help="Top-p for robot LLM")
     parser.add_argument("--assistant-top-p", type=float, default=0.8, help="Top-p for assistant LLM")
     parser.add_argument("--robot-top-k", type=int, default=20, help="Top-k for robot LLM")
