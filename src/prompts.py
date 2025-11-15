@@ -183,7 +183,7 @@ planning_prompt = PromptTemplate(
         "- DO NOT say anything like 'Here are some suggestions:' or 'Here are new search queries', only type the queries themselves.\n"
         "- DO NOT add formatting like bullet points or numbering.\n"
         "- DO NOT use quotes around queries.\n"
-        "- DO NOT add any notes or commentary.\n"
+        "- DO NOT add any notes or commentary to the output, only output the queries themselves.\n"
         "- DO NOT explain or comment.\n"
         "- Output exactly one search query per line.\n\n"
         "Conversation:\n{conversation_history}\n\n"
