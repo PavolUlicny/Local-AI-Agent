@@ -137,8 +137,13 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 - Detects context length / token window errors (string pattern matching). On detection, halves `num_ctx` and recomputes `num_predict` (bounded ≥ 2048 / ≥ 512) then rebuilds chains; capped by `MAX_REBUILD_RETRIES` per stage.
 - Retries / exponential backoff for DuckDuckGo (rate limit or transient failures) with jitter.
 - Fallback paths: failing seed→use original query; failing planning→skip suggestions; failing relevance→drop result.
-- All LLM classifier outputs normalized & regex validated; defaults chosen to safe expansive path (e.g., default SEARCH if classification malformed).
-- If a classifier call itself errors (e.g., connection/model error), the agent falls back to NO_SEARCH for that turn; if the classifier returns malformed output, it defaults to SEARCH.
+- All LLM classifier outputs are normalized and regex-validated. On malformed output, defaults are stage-specific:
+  - Search decision → defaults to SEARCH (expansive)
+  - Query filter → defaults to NO (conservative)
+  - Result filter → defaults to NO (conservative)
+- If a classifier call errors (e.g., connection/model error), stage defaults apply:
+  - Search decision errors → fall back to NO_SEARCH for that turn
+  - Query filter/result filter errors → treat as NO (skip)
 - Context-length rebuilds are implemented for: search decision, seed generation, result relevance checks, planning, query filter, and final answer stages. Topic selection (context classification) does not rebuild on context errors; it proceeds without selecting a topic when needed.
 
 ## CLI Arguments
