@@ -690,6 +690,7 @@ def main(args: argparse.Namespace | None = None) -> None:
                                 "current_day": current_day,
                                 "candidate_query": candidate,
                                 "conversation_history": conversation_text,
+                                "user_question": user_query,
                             }
                         )
                     except ResponseError as exc:
@@ -710,6 +711,7 @@ def main(args: argparse.Namespace | None = None) -> None:
                                             "current_day": current_day,
                                             "candidate_query": candidate,
                                             "conversation_history": conversation_text,
+                                            "user_question": user_query,
                                         }
                                     )
                                 except ResponseError:
@@ -819,6 +821,7 @@ def main(args: argparse.Namespace | None = None) -> None:
                                     "current_day": current_day,
                                     "candidate_query": candidate,
                                     "conversation_history": conversation_text,
+                                    "user_question": user_query,
                                 }
                             )
                         except ResponseError as exc:
@@ -839,6 +842,7 @@ def main(args: argparse.Namespace | None = None) -> None:
                                                 "current_day": current_day,
                                                 "candidate_query": candidate,
                                                 "conversation_history": conversation_text,
+                                                "user_question": user_query,
                                             }
                                         )
                                     except ResponseError:
