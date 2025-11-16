@@ -14,7 +14,7 @@
 8. [Robustness & Error Handling](#robustness--error-handling)
 9. [CLI Arguments](#cli-arguments)
 10. [Ollama runtime installation](#ollama-runtime-installation)
-11. [Project install](#project-installation)
+11. [Project installation](#project-installation)
 12. [Quick Start Examples](#quick-start-examples)
 13. [Configuration Guidelines](#configuration-guidelines)
 14. [Performance Considerations](#performance-considerations)
@@ -202,7 +202,7 @@ Make sure you downloaded the ollama runtime using the [tutorial above](#ollama-r
 sudo apt update && sudo apt install -y python3-venv
 ```
 
-Project install:
+- Project install:
 
 In one terminal:
 
