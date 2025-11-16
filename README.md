@@ -190,11 +190,11 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 - Windows:
 
-Download and run the Windows installer from the official site: [https://ollama.com](https://ollama.com/)
+ Download and run the Windows installer from the official site: [https://ollama.com](https://ollama.com/)
 
 ## Project installation
 
-Make sure you downloaded the ollama runtime using the [tutorial above](#ollama-runtime-installation) before installing this project.
+Ensure you have downloaded the Ollama runtime using the [tutorial above](#ollama-runtime-installation) before installing this project.
 
 - Linux prerequisite (Debian/Ubuntu): install `python3-venv` so you can create virtual environments:
 
