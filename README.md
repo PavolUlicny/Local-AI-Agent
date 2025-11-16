@@ -13,15 +13,16 @@
 7. [Search Strategy & Filtering](#search-strategy--filtering)
 8. [Robustness & Error Handling](#robustness--error-handling)
 9. [CLI Arguments](#cli-arguments)
-10. [Ollama runtime installation](#ollama-runtime-installation)
-11. [Project installation](#project-installation)
-12. [Quick Start Examples](#quick-start-examples)
-13. [Configuration Guidelines](#configuration-guidelines)
-14. [Performance Considerations](#performance-considerations)
-15. [Troubleshooting](#troubleshooting)
-16. [Limitations & Future Work](#limitations--future-work)
-17. [Security & Safety Notes](#security--safety-notes)
-18. [License](#license)
+10. [Using Different Models](#using-different-models)
+11. [System Requirements](#system-requirements)
+12. [Ollama runtime installation](#ollama-runtime-installation)
+13. [Project installation](#project-installation)
+14. [Quick Start Examples](#quick-start-examples)
+15. [Configuration Guidelines](#configuration-guidelines)
+16. [Performance Considerations](#performance-considerations)
+17. [Troubleshooting](#troubleshooting)
+18. [Security & Safety Notes](#security--safety-notes)
+19. [License](#license)
 
 ---
 
@@ -87,7 +88,8 @@ User Input
  │       ├─► Keyword Expansion & Dedup
  │       ├─► Planning Prompt (propose new queries)
  │       ├─► Query Filter Prompt (gate each candidate YES/NO)
- │       └─► Optional Fill Attempts until capacity reached
+ │       ├─► Optional Fill Attempts (extra planning cycles) to fill remaining query slots
+ │       └─► Round Accounting: A round counts only if ≥1 result for that query is accepted; queries yielding 0 accepted results are dropped without consuming the round budget.
  │
  ├─► Aggregate & Truncate Results
  │
@@ -128,7 +130,8 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 - Apply fast keyword intersection relevance; escalate borderline cases to LLM (YES/NO) within `--max-relevance-llm-checks` budget.
 - Expand topic keyword set from accepted results.
 - Plan new queries; gate each with query filter classifier.
-- Perform fill cycles until either round capacity or attempt limits reached.
+- Perform fill cycles (additional planning passes) until either round capacity or fill attempt limits reached.
+- Only queries that yield ≥1 accepted result consume a round; queries with zero accepted results are discarded without decrementing remaining rounds.
 
 5. Truncate aggregated corpus to `MAX_SEARCH_RESULTS_CHARS` before answer synthesis.
 
@@ -136,8 +139,9 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 
 - Graceful handling of missing Ollama model (`ollama pull <model>` hint logged).
 - Detects context length / token window errors (string pattern matching). On detection, halves `num_ctx` and recomputes `num_predict` (bounded ≥ 2048 / ≥ 512) then rebuilds chains; capped by `MAX_REBUILD_RETRIES` per stage.
+- Automatic recovery from context length errors (progressively halves `num_ctx`; `num_predict` is reduced to ≤ half of the new context, never below 512, rather than always halving).
 - Retries / exponential backoff for DuckDuckGo (rate limit or transient failures) with jitter.
-- Fallback paths: failing seed→use original query; failing planning→skip suggestions; failing relevance→drop result.
+- Fallback paths: failing seed → use original query; failing planning → skip suggestions; failing relevance → drop result.
 - All LLM classifier outputs are normalized and regex-validated. On malformed output, defaults are stage-specific:
   - Search decision → defaults to SEARCH (expansive)
   - Query filter → defaults to NO (conservative)
@@ -145,6 +149,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 - If a classifier call errors (e.g., connection/model error), stage defaults apply:
   - Search decision errors → fall back to NO_SEARCH for that turn
   - Query filter/result filter errors → treat as NO (skip)
+  - Clarification: A "malformed output" is text that fails regex validation; this differs from an execution error/exception. Malformed → default token; error/exception → fallback behaviors above.
 - Context-length rebuilds are implemented for: search decision, seed generation, result relevance checks, planning, query filter, and final answer stages. Topic selection (context classification) does not rebuild on context errors; it proceeds without selecting a topic when needed.
 
 ## CLI Arguments
@@ -177,6 +182,63 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 | `--log-file` | `None` | Optional file log path. |
 | `--question` | `None` | One‑shot non‑interactive question mode. |
 
+## Using Different Models
+
+You can substitute any Ollama model for `cogito:8b` by pulling it first and adjusting runtime parameters:
+
+```bash
+ollama pull llama3:8b   # example
+python3 -m src.main --model llama3:8b
+```
+
+Key adjustments when switching models:
+
+- Context window (`--num-ctx`): Must not exceed the model's maximum (see the [Ollama model catalog](https://ollama.com/library) for limits). Common defaults:
+  - Llama 3 (8B/7B): 8192
+  - Mistral 7B: 8192
+  - Phi / small instruct models: 4096–8192
+  - Some extended variants (e.g., 32K finetunes) allow larger windows; set `--num-ctx` accordingly.
+- Predict length (`--num-predict`): Keep this comfortably below available combined memory. Large values increase RAM/VRAM footprint linearly with active layers.
+- Memory tradeoff: If you hit automatic halving rebuilds early, lower `--num-ctx` first; only then reduce `--num-predict`.
+- Quantization: Using a more heavily quantized model (e.g., Q4_K_M) reduces memory, allowing higher `--num-ctx` without rebuilds.
+- Robot vs Assistant: Temperatures (`--robot-temp`, `--assistant-temp`) and top‑p/k are independent of model choice; adjust only for style. Some models need slightly lower `--assistant-top-p` to avoid repetition.
+- Smaller models (<4B) may benefit from reducing `--num-predict` (e.g., 2048–4096) to preserve responsiveness.
+- You may also need to adjust prompts for some models.
+
+Recommended tuning workflow:
+
+1. Start with model's documented max context (e.g., 8192).
+1. Run a few multi‑round searches; if rebuild logs appear, drop `--num-ctx` by ~25%.
+1. If still rebuilding, cap `--num-predict` at half of current (`8192 → 4096`).
+1. Raise again incrementally once stable.
+
+Model examples:
+
+```text
+llama3:8b        --num-ctx 8192   --num-predict 4096–8192
+mistral:7b       --num-ctx 8192   --num-predict 4096–8192
+phi4-mini:3.8b   --num-ctx 4096   --num-predict 2048–4096
+codellama:7b     --num-ctx 8192   --num-predict 4096–8192 (may lower temp for code)
+```
+
+If you exceed model context, you'll see context errors and forced halving; better to preconfigure than rely on repeated rebuild cycles.
+
+## System Requirements
+
+Minimum: Combined GPU VRAM + system RAM of at least 20 GB.
+Examples: 16 GB RAM + 4 GB VRAM, or 20 GB RAM CPU‑only (may rely on swap; expect slower inference).
+
+Recommended: 25+ GB combined memory for smoother context handling and reduced swapping.
+Examples: 16 GB RAM + 10 GB VRAM, 32 GB RAM CPU‑only, or 24 GB RAM + 8 GB VRAM.
+
+Notes:
+
+- More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
+- If running CPU‑only, ensure fast SSD swap; avoid paging spikes by lowering `--num-predict` if memory pressure appears.
+- Smaller GPUs (≤4 GB VRAM) can still run but may force model quantization or offload; keep expectations modest.
+- If you have <20 GB combined memory, choose a smaller or more aggressively quantized model and lower `--num-ctx` (see [Using Different Models](#using-different-models)).
+- If you have 30–35+ GB combined memory, you can raise `--num-ctx` (e.g., +25%) or run a larger model (see [Using Different Models](#using-different-models)).
+
 ## Ollama runtime installation
 
 This project requires the Ollama runtime. Follow these steps to install it:
@@ -190,7 +252,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 - Windows:
 
- Download and run the Windows installer from the official site: [https://ollama.com](https://ollama.com/)
+Download and run the Windows installer from the official site: [https://ollama.com](https://ollama.com/)
 
 ## Project installation
 
@@ -231,25 +293,25 @@ Notes:
 Interactive session:
 
 ```bash
-python -m src.main
+python3 -m src.main
 ```
 
 Ask a single question and exit:
 
 ```bash
-python -m src.main --question "Explain the difference between variance and standard deviation"
+python3 -m src.main --question "Explain the difference between variance and standard deviation"
 ```
 
 Force reasoning without searches:
 
 ```bash
-python -m src.main --no-auto-search --question "Derive the quadratic formula"
+python3 -m src.main --no-auto-search --question "Derive the quadratic formula"
 ```
 
 Increase search aggressiveness:
 
 ```bash
-python -m src.main --max-rounds 20 --search-max-results 8
+python3 -m src.main --max-rounds 20 --search-max-results 8
 ```
 
 ## Configuration Guidelines
@@ -274,24 +336,6 @@ python -m src.main --max-rounds 20 --search-max-results 8
 | Many rate limit warnings | DuckDuckGo throttling | Lower concurrency (accept defaults) or switch backend (`lite`). |
 | Empty search results | Backend HTML scrape variability | Retry with `--ddg-backend api` or broaden query phrasing. |
 | No new suggestions | Planning chain conservative or truncation | Increase `--max-followup-suggestions` or verify not hitting truncation caps. |
-
-## Limitations & Future Work
-
-- No persistent disk caching of search results between runs.
-- No structured citation graph; answers consume raw text without provenance markers.
-- DuckDuckGo HTML scraping may be brittle against layout changes.
-- Relevance heuristics simple (keyword intersection + binary classifier); could upgrade to embedding similarity.
-- Topics stored in memory only; restart resets context.
-- No parallelization of result filtering (sequential chain calls).
-- No explicit hallucination detection beyond constraints in prompts.
-
-Potential enhancements:
-
-- Persistent vector store & hybrid semantic retrieval.
-- Pluggable search providers (e.g., Brave, local corpora, offline docs).
-- Structured citation block appended post‑answer with link ranking.
-- Embedding‑based cluster dedup & diversity scoring.
-- Configurable persistence layer (SQLite or LiteFS) for long‑term topic memory.
 
 ## Security & Safety Notes
 
