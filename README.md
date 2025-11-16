@@ -343,11 +343,11 @@ python3 -m src.main --max-rounds 20 --search-max-results 8
 - User input is directly embedded into prompts; avoid placing secrets or credentials in queries.
 - URL canonicalization strips default ports and `www.` but retains query string—beware PII embedded in copied URLs.
 - The system does not attempt adversarial prompt injection mitigation beyond rigid output regex validation for classifier stages.
-- License (Unlicense) permits unrestricted modification and distribution; ensure compliance with third‑party content usage from search results.
+- License (MIT) permits broad reuse, modification, and distribution; ensure compliance with third‑party content usage from search results.
 
 ## License
 
-This project is released under the **Unlicense** (public domain dedication). See `LICENSE` for full text.
+This project is released under the **MIT License**. See `LICENSE` for full text.
 
 ## Acknowledgments
 
