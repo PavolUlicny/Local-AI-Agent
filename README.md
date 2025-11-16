@@ -176,9 +176,24 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 | `--log-file` | `None` | Optional file log path. |
 | `--question` | `None` | One‑shot non‑interactive question mode. |
 
-## Installation
+## Ollama install
 
-Requires a working [Ollama](https://ollama.com/) runtime.
+This project requires the Ollama runtime. Follow these steps to install it:
+
+- Linux (example using the official install script):
+
+```bash
+# Download and run the official installer script
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+- Windows:
+
+Download and run the Windows installer from the official site: [https://ollama.com](https://ollama.com/)
+
+## Project install
+
+Make sure you downloaded the ollama runtime using the tutorial above before installing the project.
 
 In one terminal:
 
