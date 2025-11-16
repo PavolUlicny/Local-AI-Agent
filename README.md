@@ -13,14 +13,15 @@
 7. [Search Strategy & Filtering](#search-strategy--filtering)
 8. [Robustness & Error Handling](#robustness--error-handling)
 9. [CLI Arguments](#cli-arguments)
-10. [Installation](#installation)
-11. [Quick Start Examples](#quick-start-examples)
-12. [Configuration Guidelines](#configuration-guidelines)
-13. [Performance Considerations](#performance-considerations)
-14. [Troubleshooting](#troubleshooting)
-15. [Limitations & Future Work](#limitations--future-work)
-16. [Security & Safety Notes](#security--safety-notes)
-17. [License](#license)
+10. [Ollama runtime installation](#ollama-runtime-installation)
+11. [Project install](#project-installation)
+12. [Quick Start Examples](#quick-start-examples)
+13. [Configuration Guidelines](#configuration-guidelines)
+14. [Performance Considerations](#performance-considerations)
+15. [Troubleshooting](#troubleshooting)
+16. [Limitations & Future Work](#limitations--future-work)
+17. [Security & Safety Notes](#security--safety-notes)
+18. [License](#license)
 
 ---
 
@@ -176,7 +177,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 | `--log-file` | `None` | Optional file log path. |
 | `--question` | `None` | One‑shot non‑interactive question mode. |
 
-## Ollama install
+## Ollama runtime installation
 
 This project requires the Ollama runtime. Follow these steps to install it:
 
@@ -191,9 +192,17 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 Download and run the Windows installer from the official site: [https://ollama.com](https://ollama.com/)
 
-## Project install
+## Project installation
 
-Make sure you downloaded the ollama runtime using the tutorial above before installing the project.
+Make sure you downloaded the ollama runtime using the [tutorial above](#ollama-runtime-installation) before installing this project.
+
+- Linux prerequisite (Debian/Ubuntu): install `python3-venv` so you can create virtual environments:
+
+```bash
+sudo apt update && sudo apt install -y python3-venv
+```
+
+Project install:
 
 In one terminal:
 
