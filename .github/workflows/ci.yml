@@ -18,18 +18,23 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Upgrade pip and install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-      - name: Install QA tools (ruff, mypy)
+      - name: Upgrade pip and install dependencies (runtime + dev)
         run: |
-          pip install ruff mypy
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+          # ensure pre-commit is available for the hook runner
+          pip install --upgrade pre-commit
 
       - name: Run pre-commit hooks
         run: |
-          pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
 
       - name: Ruff lint

@@ -58,7 +58,7 @@ EXTRA_ARGS += $(if $(LOG_FILE), --log-file "$(LOG_FILE)")
 # Treat only common truthy values as enabling the flag; plain "0" or empty will not
 EXTRA_ARGS += $(if $(filter 1 true TRUE yes YES on ON,$(NO_AUTO_SEARCH)), --no-auto-search)
 
-.PHONY: help venv install dev-setup pull-model serve-ollama run ask run-no-search run-search check-ollama check clean
+.PHONY: help venv install dev-setup pull-model serve-ollama run ask run-no-search run-search check-ollama check smoke clean
 
 help: ## Show available targets
 	@awk 'BEGIN{FS":.*?## "};/^[a-zA-Z0-9_.-]+:.*?## /{printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -103,6 +103,9 @@ check-ollama: ## Check Ollama server and list local models
 
 check: ## Quick import check of agent + config
 	@$(PY) -c "from src.config import AgentConfig; from src.agent import Agent; cfg=AgentConfig(no_auto_search=True, question='healthcheck'); Agent(cfg); print('OK')"
+
+smoke: install ## Install deps then run the no-network smoke test
+	@$(PY) -m scripts.smoke
 
 clean: ## Remove cache files
 	@find . -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true

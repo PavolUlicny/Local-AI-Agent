@@ -1,0 +1,4 @@
+pre-commit>=3.3
+ruff>=0.18
+mypy>=1.9
+pip-audit>=2.6
