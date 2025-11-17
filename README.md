@@ -7,22 +7,29 @@
 1. [Overview](#overview)
 2. [Key Features](#key-features)
 3. [Core Architecture](#core-architecture)
-4. [Execution Pipeline](#execution-pipeline)
-5. [Modules & Responsibilities](#modules--responsibilities)
-6. [Topic & Context Management](#topic--context-management)
-7. [Search Strategy & Filtering](#search-strategy--filtering)
-8. [Robustness & Error Handling](#robustness--error-handling)
-9. [CLI Arguments](#cli-arguments)
-10. [Using Different Models](#using-different-models)
-11. [System Requirements](#system-requirements)
-12. [Ollama runtime installation](#ollama-runtime-installation)
-13. [Project installation](#project-installation)
-14. [Quick Start Examples](#quick-start-examples)
-15. [Configuration Guidelines](#configuration-guidelines)
-16. [Performance Considerations](#performance-considerations)
-17. [Troubleshooting](#troubleshooting)
-18. [Security & Safety Notes](#security--safety-notes)
-19. [License](#license)
+4. [Project Structure](#project-structure)
+5. [Execution Pipeline](#execution-pipeline)
+6. [Modules & Responsibilities](#modules--responsibilities)
+7. [Topic & Context Management](#topic--context-management)
+8. [Search Strategy & Filtering](#search-strategy--filtering)
+9. [Robustness & Error Handling](#robustness--error-handling)
+10. [CLI Arguments](#cli-arguments)
+11. [Using Different Models](#using-different-models)
+12. [System Requirements](#system-requirements)
+13. [Ollama runtime installation](#ollama-runtime-installation)
+14. [Project installation](#project-installation)
+15. [Quick Start Examples](#quick-start-examples)
+16. [Using the Makefile](#using-the-makefile)
+17. [Development](#development)
+18. [Continuous Integration (CI)](#continuous-integration-ci)
+19. [Configuration Guidelines](#configuration-guidelines)
+20. [Performance Considerations](#performance-considerations)
+21. [Troubleshooting](#troubleshooting)
+22. [Security & Safety Notes](#security--safety-notes)
+23. [Known Limitations](#known-limitations)
+24. [Contributing](#contributing)
+25. [License](#license)
+26. [Acknowledgments](#acknowledgments)
 
 ---
 
@@ -68,6 +75,29 @@ High‑level components and their roles:
 
 Note: Robot and Assistant both use the same base model specified via `--model`, but with different temperatures and decoding parameters tailored to their roles.
 
+## Project Structure
+
+```text
+Local-AI-Agent/
+├─ src/
+│  ├─ main.py           # Entry-point (`python -m src.main`)
+│  ├─ cli.py            # CLI args + logging setup
+│  ├─ config.py         # `AgentConfig` dataclass and defaults
+│  ├─ agent.py          # Orchestration: context, search, response
+│  ├─ chains.py         # LLM instances and prompt chains
+│  ├─ prompts.py        # Prompt templates (LangChain compatible)
+│  ├─ helpers.py        # Utilities: keywords, truncation, URLs, topics
+│  └─ exceptions.py     # ResponseError typing
+├─ scripts/
+│  └─ smoke.py          # No-network smoke check used by CI
+├─ .github/workflows/ci.yml  # Lint, type-check, smoke in CI
+├─ .pre-commit-config.yaml   # Local hooks: ruff, format, mypy, basics
+├─ pyproject.toml       # ruff + mypy config
+├─ requirements.txt     # dependency bounds
+├─ Makefile             # helpful dev/run shortcuts
+└─ README.md            # this file
+```
+
 ## Execution Pipeline
 
 ```text
@@ -100,7 +130,19 @@ User Input
 
 ### `src/main.py`
 
-Entry point, CLI parsing, prompt chain construction (`PromptTemplate | LLM | StrOutputParser`), search loop orchestration, resilience/rebuild strategy, console streaming of final answer, interactive shell. Maintains global counters to cap rebuild attempts per stage.
+Thin entry point that wires CLI args to the `Agent` and starts execution. It delegates logging setup to `cli.py`, configuration to `config.py`, chain construction to `chains.py`, and the full runtime/search orchestration to `agent.py`.
+
+### `src/cli.py`
+
+Defines the command‑line interface (arguments, defaults) and logging configuration.
+
+### `src/config.py`
+
+Holds the `AgentConfig` dataclass with all tunable parameters. Provides a convenience property for `auto_search_decision`.
+
+### `src/chains.py`
+
+Builds the LangChain components: two `OllamaLLM` instances (robot/assistant) and the prompt pipelines for each stage using `PromptTemplate | LLM | StrOutputParser`.
 
 ### `src/prompts.py`
 
@@ -109,6 +151,10 @@ Resolves `PromptTemplate` for a range of LangChain versions (searches multiple i
 ### `src/helpers.py`
 
 Utility layer: tokenization, stopword & numeric heuristic filtering, context/date formatting, URL canonicalization, keyword extraction, truncation rules, topic selection logic, keyword pruning frequency pass, regex validation for constrained outputs. Houses constants controlling size budgets and caps.
+
+### `src/agent.py`
+
+Owns the runtime orchestration: topic selection, search decision, seed generation, iterative query planning/filtering, DuckDuckGo retrieval with backoff, deduplication, truncation, answer synthesis with/without search context, interactive loop, and resilience (context‑length rebuilds). Maintains per‑stage rebuild counters.
 
 ## Topic & Context Management
 
@@ -138,8 +184,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 ## Robustness & Error Handling
 
 - Graceful handling of missing Ollama model (`ollama pull <model>` hint logged).
-- Detects context length / token window errors (string pattern matching). On detection, halves `num_ctx` and recomputes `num_predict` (bounded ≥ 2048 / ≥ 512) then rebuilds chains; capped by `MAX_REBUILD_RETRIES` per stage.
-- Automatic recovery from context length errors (progressively halves `num_ctx`; `num_predict` is reduced to ≤ half of the new context, never below 512, rather than always halving).
+- Detects context length / token window errors and performs controlled recovery: progressively halves `num_ctx` (never below 2048), caps `num_predict` at ≤ 50% of the updated context (never below 512), rebuilds affected chains, and limits attempts per stage via `MAX_REBUILD_RETRIES`.
 - Retries / exponential backoff for DuckDuckGo (rate limit or transient failures) with jitter.
 - Fallback paths: failing seed → use original query; failing planning → skip suggestions; failing relevance → drop result.
 - All LLM classifier outputs are normalized and regex-validated. On malformed output, defaults are stage-specific:
@@ -205,6 +250,12 @@ Key adjustments when switching models:
 - Smaller models (<4B) may benefit from reducing `--num-predict` (e.g., 2048–4096) to preserve responsiveness.
 - You may also need to adjust prompts for some models.
 
+Search backend notes:
+
+- `--ddg-backend html` (default): robust, may be slower; lower chance of throttling.
+- `--ddg-backend lite`: lighter HTML; can be faster but returns fewer details.
+- `--ddg-backend api`: fastest when available; can hit rate limits sooner.
+
 Recommended tuning workflow:
 
 1. Start with model's documented max context (e.g., 8192).
@@ -234,6 +285,8 @@ Examples: 16 GB RAM + 10 GB VRAM, 32 GB RAM CPU‑only, or 24 GB RAM + 8 GB VRAM
 Notes:
 
 - More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
+- Python: tested with Python 3.12 (CI). Earlier 3.10–3.11 may work but are not CI-tested.
+- OS: Linux and macOS are expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
 - If running CPU‑only, ensure fast SSD swap; avoid paging spikes by lowering `--num-predict` if memory pressure appears.
 - Smaller GPUs (≤4 GB VRAM) can still run but may force model quantization or offload; keep expectations modest.
 - If you have <20 GB combined memory, choose a smaller or more aggressively quantized model and lower `--num-ctx` (see [Using Different Models](#using-different-models)).
@@ -314,6 +367,85 @@ Increase search aggressiveness:
 python3 -m src.main --max-rounds 20 --search-max-results 8
 ```
 
+## Using the Makefile
+
+These shortcuts mirror the CLI and help standardize local runs. All commands assume bash and a local `.venv`.
+
+```bash
+# One-time setup: create venv, install deps, pull default model
+make dev-setup MODEL=cogito:8b
+
+# Start Ollama runtime (foreground)
+make serve-ollama
+
+# Interactive agent
+make run
+
+# One-shot Q&A
+make ask QUESTION="What is 2+2?"
+
+# One-shot without web search
+make run-no-search QUESTION="Derive the quadratic formula"
+
+# One-shot with web search (use html backend to mitigate rate limits)
+make run-search QUESTION="Capital of France?" MAX_ROUNDS=1 SEARCH_MAX_RESULTS=2 DDG_BACKEND=html LOG_LEVEL=INFO
+
+# Health checks
+make check-ollama   # prints local models if Ollama is up
+make check          # quick import/instantiate sanity check
+
+# Cleanup caches
+make clean
+```
+
+Notes:
+
+- Override `MODEL` in `make dev-setup MODEL=<name:tag>` to pull a different model.
+- `run-search` tunables: `MAX_ROUNDS`, `SEARCH_MAX_RESULTS`, `DDG_BACKEND`, `LOG_LEVEL` (inherits CLI defaults unless overridden: `12`, `5`, `html`, `WARNING`).
+- `NO_AUTO_SEARCH` is treated as a boolean flag. Only truthy values enable it: `1,true,TRUE,yes,YES,on,ON`. Setting `NO_AUTO_SEARCH=0` will not enable the flag.
+- `LOG_FILE` supports paths with spaces (quoted automatically). Example: `make run LOG_FILE="/tmp/agent logs/agent.log"`.
+
+## Development
+
+- Pre-commit hooks (format, lint, type-check):
+
+```bash
+pip install pre-commit
+pre-commit install
+# Run on the whole repo
+pre-commit run --all-files
+```
+
+- Ruff lint and MyPy type check (mirrors CI):
+
+```bash
+pip install ruff mypy
+ruff check src scripts
+mypy --config-file=pyproject.toml src
+```
+
+- Smoke test (no network calls):
+
+```bash
+python3 -m scripts.smoke
+```
+
+- Run via module entrypoint (recommended):
+
+```bash
+python3 -m src.main --question "Hello"
+```
+
+## Continuous Integration (CI)
+
+- GitHub Actions workflow (`.github/workflows/ci.yml`) runs on pushes/PRs to `main`:
+  - `pre-commit run --all-files` (includes ruff fix/format and mypy)
+  - `ruff check src scripts`
+  - `mypy src`
+  - `python -m scripts.smoke` (no-network smoke test)
+
+Locally, you can emulate this with the commands in the Development section.
+
 ## Configuration Guidelines
 
 - Lower `--robot-temp` to strengthen determinism in planning/classification; keep near 0 for reproducibility.
@@ -323,7 +455,7 @@ python3 -m src.main --max-rounds 20 --search-max-results 8
 
 ## Performance Considerations
 
-- Each search round = network latency + multiple prompt invocations (relevance + planning + filtering). Tune rounds and safesearch backend for speed.
+- Each search round = network latency + multiple prompt invocations (relevance + planning + filtering). Tune rounds and search backend for speed.
 - Keyword filtering is O(n * k) where n = tokens, k = stopwords; negligible versus LLM inference cost.
 - Rebuilds (context halving) reduce quality by shrinking available memory; avoid oversized inputs to sustain higher token budgets.
 
@@ -333,17 +465,47 @@ python3 -m src.main --max-rounds 20 --search-max-results 8
 |---------|-------|--------|
 | `Model 'xyz' not found` | Ollama model not pulled | `ollama pull xyz` then retry. |
 | Frequent context rebuild logs | Oversized conversation or results | Reduce `--max-rounds`, `--max-context-turns`, or initial token settings. |
-| Many rate limit warnings | DuckDuckGo throttling | Lower concurrency (accept defaults) or switch backend (`lite`). |
+| Many rate limit warnings | DuckDuckGo throttling | Lower concurrency (accept defaults) or use backend `html` (default) or `lite`. |
 | Empty search results | Backend HTML scrape variability | Retry with `--ddg-backend api` or broaden query phrasing. |
 | No new suggestions | Planning chain conservative or truncation | Increase `--max-followup-suggestions` or verify not hitting truncation caps. |
+| `ModuleNotFoundError: No module named 'langchain_community'` | Wrong Python interpreter or deps not installed | Activate the venv and reinstall: `source .venv/bin/activate && pip install -r requirements.txt`. Run via `python -m src.main`. |
+| `pre-commit` alters files locally | Hooks include auto-fixers (ruff). Re-run `git add` after fixes. | Use `pre-commit run --all-files --show-diff-on-failure` in CI modes. |
+| `--log-file` path with spaces fails | Makefile quoting added, but direct CLI still needs quotes | Use `--log-file "/path/with spaces/agent.log"` |
 
 ## Security & Safety Notes
 
-- All network calls are outbound DuckDuckGo searches; no external code execution.
+- All network calls are outbound DuckDuckGo searches; no external code execution beyond HTTP GET for search pages/snippets.
 - User input is directly embedded into prompts; avoid placing secrets or credentials in queries.
 - URL canonicalization strips default ports and `www.` but retains query string—beware PII embedded in copied URLs.
 - The system does not attempt adversarial prompt injection mitigation beyond rigid output regex validation for classifier stages.
 - License (MIT) permits broad reuse, modification, and distribution; ensure compliance with third‑party content usage from search results.
+
+Optional hardening tips:
+
+- Run `pip-audit` in CI to surface dependency CVEs:
+
+```bash
+pip install pip-audit
+pip-audit
+```
+
+- Treat search snippets as untrusted content within prompts; avoid following instructions contained in results.
+
+## Known Limitations
+
+- DuckDuckGo scraping can vary over time; identical queries may yield different snippets or ordering across runs.
+- The assistant model uses nonzero temperature by default for answers, so responses are not bit‑for‑bit deterministic.
+- No JavaScript execution or full page rendering is performed; only titles, URLs, and snippet text are used, which may miss dynamic content.
+- Topic selection does not perform context‑length rebuilds; if it fails, the system proceeds without selecting a topic for that turn.
+- No persistent storage of conversations beyond process lifetime; restarting the program resets topics and history.
+- Rate limiting by DuckDuckGo may still occur despite retries and backoff; reducing rounds or switching backend can help.
+- The system does not include adversarial prompt‑injection defenses beyond strict classifier output validation.
+
+## Contributing
+
+- Fork, create a feature branch, and open a PR.
+- Run `pre-commit run --all-files` before committing to keep diffs clean.
+- If you add dependencies, update `requirements.txt` and consider adding a smoke check for new wiring.
 
 ## License
 
