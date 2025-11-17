@@ -1,4 +1,6 @@
 pre-commit>=3.3
-ruff>=0.18
+# Use the latest pip-resolvable ruff release series (many PyPI builds use the 0.0.x scheme).
+# Pin to a known-good minimum that is available on PyPI to avoid "No matching distribution" errors.
+ruff>=0.0.133
 mypy>=1.9
 pip-audit>=2.6
