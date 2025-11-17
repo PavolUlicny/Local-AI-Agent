@@ -284,16 +284,21 @@ def _select_topic(
     for _, idx in top_candidates:
         topic = topics[idx]
         recent_turns = topic.turns[-max_context_turns:]
-        decision_raw = context_chain.invoke(
-            {
-                "recent_conversation": _format_turns(recent_turns, "No prior conversation."),
-                "new_question": question,
-                "current_datetime": current_datetime,
-                "current_year": current_year,
-                "current_month": current_month,
-                "current_day": current_day,
-            }
-        )
+        try:
+            decision_raw = context_chain.invoke(
+                {
+                    "recent_conversation": _format_turns(recent_turns, "No prior conversation."),
+                    "new_question": question,
+                    "current_datetime": current_datetime,
+                    "current_year": current_year,
+                    "current_month": current_month,
+                    "current_day": current_day,
+                }
+            )
+        except Exception:
+            # If a single candidate evaluation fails, continue evaluating other
+            # candidates instead of aborting the entire selection cycle.
+            continue
         validated_context = _regex_validate(str(decision_raw), _PATTERN_CONTEXT, "NEW_TOPIC")
         normalized = _normalize_context_decision(validated_context)
         decisions.append((normalized, idx, recent_turns))
