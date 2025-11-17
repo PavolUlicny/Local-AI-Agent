@@ -1,14 +1,28 @@
 from __future__ import annotations
 
-try:
-    from ollama import ResponseError as OllamaResponseError
-    ResponseError = OllamaResponseError  # type: ignore
-except ImportError:
+import importlib
+from typing import Type, Optional
+
+_found = None
+_resp: Optional[Type[Exception]] = None
+for modname in ("ollama", "ollama._types"):
     try:
-        from ollama._types import ResponseError as OllamaResponseError
-        ResponseError = OllamaResponseError  # type: ignore
-    except ImportError:  # pragma: no cover - fallback
-        class ResponseError(Exception):
-            pass
+        mod = importlib.import_module(modname)
+    except Exception:
+        continue
+    if hasattr(mod, "ResponseError"):
+        _found = getattr(mod, "ResponseError")
+        break
+
+if _found is None:  # pragma: no cover - fallback
+
+    class _DefaultResponseError(Exception):
+        pass
+
+    _resp = _DefaultResponseError
+else:
+    _resp = _found
+ResponseError: Type[Exception] = _resp  # type: ignore[assignment]
+
 
 __all__ = ["ResponseError"]

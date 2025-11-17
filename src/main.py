@@ -32,5 +32,6 @@ def main(args: argparse.Namespace | None = None) -> None:
     else:
         agent.run()
 
+
 if __name__ == "__main__":
     main()

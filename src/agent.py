@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Set
+from typing import List, Set, TYPE_CHECKING
 import logging
 import hashlib
 import time
@@ -10,67 +10,57 @@ import sys
 
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
-try:
-    from src.config import AgentConfig  # type: ignore
-    from src.chains import build_llms, build_chains  # type: ignore
-    from src.exceptions import ResponseError  # type: ignore
-except ImportError:  # fallback when imported as top-level module
-    from config import AgentConfig  # type: ignore
-    from chains import build_llms, build_chains  # type: ignore
-    from exceptions import ResponseError  # type: ignore
+import importlib
 
-try:  # helper + prompts fallback import pattern
-    from src.helpers import (
-        Topic,
-        _truncate_result,
-        _normalize_query,
-        _regex_validate,
-        _truncate_text,
-        _current_datetime_utc,
-        _is_context_length_error,
-        _pick_seed_query,
-        _extract_keywords,
-        _is_relevant,
-        _format_turns,
-        _collect_prior_responses,
-        _select_topic,
-        _prune_keywords,
-        _canonicalize_url,
-        _PATTERN_SEARCH_DECISION,
-        _PATTERN_YES_NO,
-        MAX_CONVERSATION_CHARS,
-        MAX_PRIOR_RESPONSE_CHARS,
-        MAX_SEARCH_RESULTS_CHARS,
-        MAX_TURN_KEYWORD_SOURCE_CHARS,
-        MAX_TOPICS,
-        MAX_REBUILD_RETRIES,
-    )
-except ImportError:  # pragma: no cover - fallback
-    from helpers import (
-        Topic,
-        _truncate_result,
-        _normalize_query,
-        _regex_validate,
-        _truncate_text,
-        _current_datetime_utc,
-        _is_context_length_error,
-        _pick_seed_query,
-        _extract_keywords,
-        _is_relevant,
-        _format_turns,
-        _collect_prior_responses,
-        _select_topic,
-        _prune_keywords,
-        _canonicalize_url,
-        _PATTERN_SEARCH_DECISION,
-        _PATTERN_YES_NO,
-        MAX_CONVERSATION_CHARS,
-        MAX_PRIOR_RESPONSE_CHARS,
-        MAX_SEARCH_RESULTS_CHARS,
-        MAX_TURN_KEYWORD_SOURCE_CHARS,
-        MAX_TOPICS,
-        MAX_REBUILD_RETRIES,
-    )
+if TYPE_CHECKING:
+    from src.config import AgentConfig
+    from src.helpers import Topic
+
+try:
+    _config = importlib.import_module("src.config")
+    _chains = importlib.import_module("src.chains")
+    _exceptions = importlib.import_module("src.exceptions")
+except Exception:  # fallback when imported as top-level module
+    _config = importlib.import_module("config")
+    _chains = importlib.import_module("chains")
+    _exceptions = importlib.import_module("exceptions")
+
+_AgentConfig = _config.AgentConfig
+build_llms = _chains.build_llms
+build_chains = _chains.build_chains
+ResponseError = _exceptions.ResponseError
+
+# Import helpers as a module and bind required symbols to avoid duplicate
+# name-definition errors during static analysis (mypy sees both branches
+# if using `from ... import ...` in try/except).
+try:
+    _helpers = importlib.import_module("src.helpers")
+except Exception:  # pragma: no cover - local dev fallback
+    _helpers = importlib.import_module("helpers")
+
+_Topic = _helpers.Topic
+_truncate_result = _helpers._truncate_result
+_normalize_query = _helpers._normalize_query
+_regex_validate = _helpers._regex_validate
+_truncate_text = _helpers._truncate_text
+_current_datetime_utc = _helpers._current_datetime_utc
+_is_context_length_error = _helpers._is_context_length_error
+_pick_seed_query = _helpers._pick_seed_query
+_extract_keywords = _helpers._extract_keywords
+_is_relevant = _helpers._is_relevant
+_format_turns = _helpers._format_turns
+_collect_prior_responses = _helpers._collect_prior_responses
+_select_topic = _helpers._select_topic
+_prune_keywords = _helpers._prune_keywords
+_canonicalize_url = _helpers._canonicalize_url
+_PATTERN_SEARCH_DECISION = _helpers._PATTERN_SEARCH_DECISION
+_PATTERN_YES_NO = _helpers._PATTERN_YES_NO
+MAX_CONVERSATION_CHARS = _helpers.MAX_CONVERSATION_CHARS
+MAX_PRIOR_RESPONSE_CHARS = _helpers.MAX_PRIOR_RESPONSE_CHARS
+MAX_SEARCH_RESULTS_CHARS = _helpers.MAX_SEARCH_RESULTS_CHARS
+MAX_TURN_KEYWORD_SOURCE_CHARS = _helpers.MAX_TURN_KEYWORD_SOURCE_CHARS
+MAX_TOPICS = _helpers.MAX_TOPICS
+MAX_REBUILD_RETRIES = _helpers.MAX_REBUILD_RETRIES
 
 
 class Agent:
@@ -89,7 +79,7 @@ class Agent:
             "query_filter": 0,
             "answer": 0,
         }
-        self.topics: List[Topic] = []
+        self.topics: List["Topic"] = []
 
     # Dynamic config updates after rebuild
     def _rebuild_llms(self, new_ctx: int, new_predict: int) -> None:
@@ -114,26 +104,28 @@ class Agent:
                 return self.search_api.results(query, max_results=self.cfg.search_max_results)
             except Exception as exc:  # pragma: no cover - network
                 msg = str(exc)
-                is_rate = (
-                    "Ratelimit" in msg
-                    or "429" in msg
-                    or " 202 " in msg
-                    or "rate limit" in msg.lower()
-                )
+                is_rate = "Ratelimit" in msg or "429" in msg or " 202 " in msg or "rate limit" in msg.lower()
                 if is_rate:
                     logging.warning(
                         f"Rate limited for '{query}' (attempt {attempt}/{self.cfg.search_retries}); sleeping {delay:.1f}s"
                     )
                 else:
-                    logging.warning(
-                        f"Search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}"
-                    )
+                    logging.warning(f"Search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}")
                 time.sleep(delay + (random.random() * 0.5))
                 delay = min(delay * 2.0, 8.0)
         logging.warning(f"Search failed after {self.cfg.search_retries} attempts for '{query}'.")
         return []
 
-    def _inputs(self, current_datetime: str, current_year: str, current_month: str, current_day: str, conversation_text: str, user_query: str, **overrides):
+    def _inputs(
+        self,
+        current_datetime: str,
+        current_year: str,
+        current_month: str,
+        current_day: str,
+        conversation_text: str,
+        user_query: str,
+        **overrides,
+    ):
         base = {
             "current_datetime": current_datetime,
             "current_year": current_year,
@@ -192,19 +184,13 @@ class Agent:
         except ResponseError as exc:  # model not found, etc.
             message = str(exc)
             if "not found" in message.lower():
-                logging.error(
-                    f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                )
-                return (
-                    f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                )
+                logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
             selected_topic_index = None
             recent_history = []
             topic_keywords = set(question_keywords)
         except Exception as exc:  # graceful fallback
-            logging.warning(
-                f"Context classification failed; proceeding without topic selection. Error: {exc}"
-            )
+            logging.warning(f"Context classification failed; proceeding without topic selection. Error: {exc}")
             selected_topic_index = None
             recent_history = []
             topic_keywords = set(question_keywords)
@@ -241,12 +227,8 @@ class Agent:
                 should_search = decision_validated == "SEARCH"
             except ResponseError as exc:
                 if "not found" in str(exc).lower():
-                    logging.error(
-                        f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                    )
-                    return (
-                        f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                    )
+                    logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                    return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                 if _is_context_length_error(str(exc)):
                     if self.rebuild_counts["search_decision"] < MAX_REBUILD_RETRIES:
                         self._reduce_context_and_rebuild("search_decision", "search decision")
@@ -267,19 +249,13 @@ class Agent:
                         except ResponseError:
                             should_search = False
                     else:
-                        logging.info(
-                            "Reached search decision rebuild cap; defaulting to NO_SEARCH fallback."
-                        )
+                        logging.info("Reached search decision rebuild cap; defaulting to NO_SEARCH fallback.")
                         should_search = False
                 else:
-                    logging.warning(
-                        "Search decision failed with non-context error; defaulting to NO_SEARCH."
-                    )
+                    logging.warning("Search decision failed with non-context error; defaulting to NO_SEARCH.")
                     should_search = False
             except Exception as exc:
-                logging.warning(
-                    f"Search decision failed unexpectedly; defaulting to NO_SEARCH. Error: {exc}"
-                )
+                logging.warning(f"Search decision failed unexpectedly; defaulting to NO_SEARCH. Error: {exc}")
                 should_search = False
 
         if should_search:
@@ -300,12 +276,8 @@ class Agent:
                 primary_search_query = _pick_seed_query(seed_text, user_query)
             except ResponseError as exc:
                 if "not found" in str(exc).lower():
-                    logging.error(
-                        f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                    )
-                    return (
-                        f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                    )
+                    logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                    return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                 if _is_context_length_error(str(exc)):
                     if self.rebuild_counts["seed"] < MAX_REBUILD_RETRIES:
                         self._reduce_context_and_rebuild("seed", "seed")
@@ -326,23 +298,17 @@ class Agent:
                         except ResponseError:
                             primary_search_query = user_query
                     else:
-                        logging.info(
-                            "Reached seed rebuild cap; using original user query as search seed."
-                        )
+                        logging.info("Reached seed rebuild cap; using original user query as search seed.")
                         primary_search_query = user_query
                 else:
-                    logging.warning(
-                        "Seed generation failed; using original user query as search seed."
-                    )
+                    logging.warning("Seed generation failed; using original user query as search seed.")
                     primary_search_query = user_query
             except Exception as exc:
-                logging.warning(
-                    f"Seed generation failed unexpectedly; using original query. Error: {exc}"
-                )
+                logging.warning(f"Seed generation failed unexpectedly; using original query. Error: {exc}")
                 primary_search_query = user_query
 
             pending_queries: List[str] = [primary_search_query]
-            seen_query_norms: Set[str] = { _normalize_query(primary_search_query) }
+            seen_query_norms: Set[str] = {_normalize_query(primary_search_query)}
             if not topic_keywords:
                 topic_keywords.update(_extract_keywords(user_query))
                 topic_keywords.update(_extract_keywords(primary_search_query))
@@ -371,9 +337,7 @@ class Agent:
                         ]
                         if part
                     )
-                    result_hash = hashlib.sha1(
-                        assembled.encode("utf-8", errors="ignore")
-                    ).hexdigest()
+                    result_hash = hashlib.sha1(assembled.encode("utf-8", errors="ignore")).hexdigest()
                     if result_hash in seen_result_hashes:
                         continue
                     result_text = _truncate_result(assembled)
@@ -404,23 +368,17 @@ class Agent:
                                     topic_keywords=topic_keywords_text,
                                 )
                             )
-                            relevance_decision = _regex_validate(
-                                str(relevance_raw), _PATTERN_YES_NO, "NO"
-                            )
+                            relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
                             relevance_llm_checks += 1
                         except ResponseError as exc:
                             if "not found" in str(exc).lower():
                                 logging.error(
                                     f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                                 )
-                                return (
-                                    f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                                )
+                                return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                             if _is_context_length_error(str(exc)):
                                 if self.rebuild_counts["relevance"] < MAX_REBUILD_RETRIES:
-                                    self._reduce_context_and_rebuild(
-                                        "relevance", "relevance"
-                                    )
+                                    self._reduce_context_and_rebuild("relevance", "relevance")
                                     try:
                                         relevance_raw = self.chains["result_filter"].invoke(
                                             self._inputs(
@@ -436,9 +394,7 @@ class Agent:
                                                 topic_keywords=topic_keywords_text,
                                             )
                                         )
-                                        relevance_decision = _regex_validate(
-                                            str(relevance_raw), _PATTERN_YES_NO, "NO"
-                                        )
+                                        relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
                                         relevance_llm_checks += 1
                                     except ResponseError:
                                         logging.info(
@@ -446,9 +402,7 @@ class Agent:
                                         )
                                         relevance_decision = "NO"
                                 else:
-                                    logging.info(
-                                        "Reached relevance rebuild cap; marking result as low relevance."
-                                    )
+                                    logging.info("Reached relevance rebuild cap; marking result as low relevance.")
                                     relevance_decision = "NO"
                             else:
                                 logging.info(
@@ -469,15 +423,11 @@ class Agent:
                     seen_result_hashes.add(result_hash)
                     if norm_link:
                         seen_urls.add(norm_link)
-                    keywords_source = " ".join(
-                        [part for part in [title, snippet] if part]
-                    )
+                    keywords_source = " ".join([part for part in [title, snippet] if part])
                     topic_keywords.update(_extract_keywords(keywords_source))
                     accepted_any = True
                 if not accepted_any:
-                    logging.info(
-                        f"No relevant results for '{current_query}'. Not counting toward limit."
-                    )
+                    logging.info(f"No relevant results for '{current_query}'. Not counting toward limit.")
                     if round_index < len(pending_queries):
                         pending_queries.pop(round_index)
                 else:
@@ -489,9 +439,7 @@ class Agent:
                     continue
                 suggestion_limit = min(cfg.max_followup_suggestions, remaining_slots)
                 results_to_date = "\n\n".join(aggregated_results) or "No results yet."
-                results_to_date = _truncate_text(
-                    results_to_date, MAX_SEARCH_RESULTS_CHARS
-                )
+                results_to_date = _truncate_text(results_to_date, MAX_SEARCH_RESULTS_CHARS)
                 try:
                     suggestions_raw = self.chains["planning"].invoke(
                         self._inputs(
@@ -508,12 +456,8 @@ class Agent:
                     )
                 except ResponseError as exc:
                     if "not found" in str(exc).lower():
-                        logging.error(
-                            f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                        )
-                        return (
-                            f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                        )
+                        logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                        return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                     if _is_context_length_error(str(exc)):
                         if self.rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
                             self._reduce_context_and_rebuild("planning", "planning")
@@ -532,24 +476,16 @@ class Agent:
                                     )
                                 )
                             except ResponseError:
-                                logging.info(
-                                    "Planning retry failed; skipping follow-up suggestions this round."
-                                )
+                                logging.info("Planning retry failed; skipping follow-up suggestions this round.")
                                 suggestions_raw = "NONE"
                         else:
-                            logging.info(
-                                "Reached planning rebuild cap; no new suggestions this round."
-                            )
+                            logging.info("Reached planning rebuild cap; no new suggestions this round.")
                             suggestions_raw = "NONE"
                     else:
-                        logging.info(
-                            f"Could not plan follow-up searches: {exc}"
-                        )
+                        logging.info(f"Could not plan follow-up searches: {exc}")
                         suggestions_raw = "NONE"
                 except Exception as exc:
-                    logging.info(
-                        f"Planning failed unexpectedly; skipping suggestions this round. Error: {exc}"
-                    )
+                    logging.info(f"Planning failed unexpectedly; skipping suggestions this round. Error: {exc}")
                     suggestions_raw = "NONE"
                 new_queries: List[str] = []
                 for line in str(suggestions_raw).splitlines():
@@ -580,17 +516,11 @@ class Agent:
                         )
                     except ResponseError as exc:
                         if "not found" in str(exc).lower():
-                            logging.error(
-                                f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                            )
-                            return (
-                                f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                            )
+                            logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                            return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                         if _is_context_length_error(str(exc)):
                             if self.rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
-                                self._reduce_context_and_rebuild(
-                                    "query_filter", "query filter"
-                                )
+                                self._reduce_context_and_rebuild("query_filter", "query filter")
                                 try:
                                     verdict_raw = self.chains["query_filter"].invoke(
                                         self._inputs(
@@ -604,49 +534,32 @@ class Agent:
                                         )
                                     )
                                 except ResponseError:
-                                    logging.info(
-                                        f"Skipping suggestion after retry: {candidate}"
-                                    )
+                                    logging.info(f"Skipping suggestion after retry: {candidate}")
                                     continue
                             else:
-                                logging.info(
-                                    f"Reached query filter rebuild cap; skipping candidate: {candidate}"
-                                )
+                                logging.info(f"Reached query filter rebuild cap; skipping candidate: {candidate}")
                                 continue
                         else:
-                            logging.info(
-                                f"Skipping suggestion due to filter error: {candidate} ({exc})"
-                            )
+                            logging.info(f"Skipping suggestion due to filter error: {candidate} ({exc})")
                             continue
                     except Exception as exc:
-                        logging.info(
-                            f"Skipping suggestion due to unexpected filter error: {candidate} ({exc})"
-                        )
+                        logging.info(f"Skipping suggestion due to unexpected filter error: {candidate} ({exc})")
                         continue
                     verdict = _regex_validate(str(verdict_raw), _PATTERN_YES_NO, "NO")
                     if verdict == "YES" and norm_candidate not in seen_query_norms:
                         pending_queries.append(candidate)
                         seen_query_norms.add(norm_candidate)
                     else:
-                        logging.info(
-                            f"Skipping off-topic follow-up suggestion: {candidate}"
-                        )
+                        logging.info(f"Skipping off-topic follow-up suggestion: {candidate}")
                 fill_attempts = 0
-                while (
-                    len(pending_queries) < max_rounds
-                    and fill_attempts < cfg.max_fill_attempts
-                ):
+                while len(pending_queries) < max_rounds and fill_attempts < cfg.max_fill_attempts:
                     fill_attempts += 1
                     remaining_slots = max_rounds - len(pending_queries)
                     if remaining_slots <= 0:
                         break
-                    suggestion_limit = min(
-                        cfg.max_followup_suggestions, remaining_slots
-                    )
+                    suggestion_limit = min(cfg.max_followup_suggestions, remaining_slots)
                     results_to_date = "\n\n".join(aggregated_results) or "No results yet."
-                    results_to_date = _truncate_text(
-                        results_to_date, MAX_SEARCH_RESULTS_CHARS
-                    )
+                    results_to_date = _truncate_text(results_to_date, MAX_SEARCH_RESULTS_CHARS)
                     try:
                         suggestions_raw = self.chains["planning"].invoke(
                             self._inputs(
@@ -663,15 +576,11 @@ class Agent:
                         )
                     except ResponseError as exc:
                         if "not found" in str(exc).lower():
-                            logging.error(
-                                f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                            )
+                            logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
                             break
                         if _is_context_length_error(str(exc)):
                             if self.rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
-                                self._reduce_context_and_rebuild(
-                                    "planning", "planning"
-                                )
+                                self._reduce_context_and_rebuild("planning", "planning")
                                 try:
                                     suggestions_raw = self.chains["planning"].invoke(
                                         self._inputs(
@@ -687,24 +596,16 @@ class Agent:
                                         )
                                     )
                                 except ResponseError:
-                                    logging.info(
-                                        "Planning retry failed during fill; stopping additional planning."
-                                    )
+                                    logging.info("Planning retry failed during fill; stopping additional planning.")
                                     break
                             else:
-                                logging.info(
-                                    "Reached planning rebuild cap during fill; stopping additional planning."
-                                )
+                                logging.info("Reached planning rebuild cap during fill; stopping additional planning.")
                                 break
                         else:
-                            logging.info(
-                                f"Could not plan additional fill queries: {exc}"
-                            )
+                            logging.info(f"Could not plan additional fill queries: {exc}")
                             break
                     except Exception as exc:
-                        logging.info(
-                            f"Planning crashed during fill; stopping additional planning. Error: {exc}"
-                        )
+                        logging.info(f"Planning crashed during fill; stopping additional planning. Error: {exc}")
                         break
                     fill_queries: List[str] = []
                     for line in str(suggestions_raw).splitlines():
@@ -741,9 +642,7 @@ class Agent:
                                 continue
                             if _is_context_length_error(str(exc)):
                                 if self.rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
-                                    self._reduce_context_and_rebuild(
-                                        "query_filter", "query filter"
-                                    )
+                                    self._reduce_context_and_rebuild("query_filter", "query filter")
                                     try:
                                         verdict_raw = self.chains["query_filter"].invoke(
                                             self._inputs(
@@ -757,9 +656,7 @@ class Agent:
                                             )
                                         )
                                     except ResponseError:
-                                        logging.info(
-                                            f"Skipping fill suggestion after retry: {candidate}"
-                                        )
+                                        logging.info(f"Skipping fill suggestion after retry: {candidate}")
                                         continue
                                 else:
                                     logging.info(
@@ -767,18 +664,14 @@ class Agent:
                                     )
                                     continue
                             else:
-                                logging.info(
-                                    f"Skipping fill suggestion due to filter error: {candidate} ({exc})"
-                                )
+                                logging.info(f"Skipping fill suggestion due to filter error: {candidate} ({exc})")
                                 continue
                         except Exception as exc:
                             logging.info(
                                 f"Skipping fill suggestion due to unexpected filter error: {candidate} ({exc})"
                             )
                             continue
-                        verdict = _regex_validate(
-                            str(verdict_raw), _PATTERN_YES_NO, "NO"
-                        )
+                        verdict = _regex_validate(str(verdict_raw), _PATTERN_YES_NO, "NO")
                         if verdict == "YES" and norm_candidate not in seen_query_norms:
                             pending_queries.append(candidate)
                             seen_query_norms.add(norm_candidate)
@@ -789,9 +682,7 @@ class Agent:
             if should_search and aggregated_results
             else ("No search results collected." if should_search else "No web search performed.")
         )
-        search_results_text = _truncate_text(
-            search_results_text, MAX_SEARCH_RESULTS_CHARS
-        )
+        search_results_text = _truncate_text(search_results_text, MAX_SEARCH_RESULTS_CHARS)
         if should_search:
             resp_inputs = self._inputs(
                 current_datetime,
@@ -819,31 +710,19 @@ class Agent:
             response_stream = chain.stream(resp_inputs)
         except ResponseError as exc:
             if "not found" in str(exc).lower():
-                logging.error(
-                    f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                )
-                return (
-                    f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                )
+                logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
             if _is_context_length_error(str(exc)):
                 if self.rebuild_counts["answer"] < MAX_REBUILD_RETRIES:
                     self._reduce_context_and_rebuild("answer", "answer")
                     try:
-                        chain = (
-                            self.chains["response"]
-                            if should_search
-                            else self.chains["response_no_search"]
-                        )
+                        chain = self.chains["response"] if should_search else self.chains["response_no_search"]
                         response_stream = chain.stream(resp_inputs)
                     except ResponseError as exc2:
-                        logging.error(
-                            f"Answer generation failed after retry: {exc2}"
-                        )
+                        logging.error(f"Answer generation failed after retry: {exc2}")
                         return "Answer generation failed after retry; see logs for details."
                 else:
-                    logging.error(
-                        "Reached answer generation rebuild cap; please shorten your query or reset session."
-                    )
+                    logging.error("Reached answer generation rebuild cap; please shorten your query or reset session.")
                     return "Answer generation failed: exceeded rebuild attempts; please shorten your query or reset session."
             else:
                 logging.error(f"Answer generation failed: {exc}")
@@ -869,7 +748,7 @@ class Agent:
             print()
         response_text = "".join(response_chunks)
         if selected_topic_index is None:
-            self.topics.append(Topic(keywords=set(topic_keywords)))
+            self.topics.append(_Topic(keywords=set(topic_keywords)))
             selected_topic_index = len(self.topics) - 1
         if selected_topic_index != len(self.topics) - 1:
             moved_topic = self.topics.pop(selected_topic_index)
@@ -882,17 +761,14 @@ class Agent:
         topic_entry.turns.append((user_query, response_text))
         if len(topic_entry.turns) > cfg.max_context_turns * 2:
             topic_entry.turns = topic_entry.turns[-cfg.max_context_turns * 2 :]
-        aggregated_keyword_source = _truncate_text(
-            " ".join(aggregated_results), MAX_TURN_KEYWORD_SOURCE_CHARS
-        )
-        turn_keywords = _extract_keywords(
-            " ".join([user_query, response_text, aggregated_keyword_source])
-        )
+        aggregated_keyword_source = _truncate_text(" ".join(aggregated_results), MAX_TURN_KEYWORD_SOURCE_CHARS)
+        turn_keywords = _extract_keywords(" ".join([user_query, response_text, aggregated_keyword_source]))
         if not turn_keywords:
             turn_keywords = set(question_keywords)
         topic_entry.keywords.update(turn_keywords)
         topic_entry.keywords.update(topic_keywords)
         _prune_keywords(topic_entry)
         return response_text
+
 
 __all__ = ["Agent"]

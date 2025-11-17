@@ -1,38 +1,22 @@
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 from langchain_core.output_parsers import StrOutputParser
 
+import importlib
+
 try:  # local or package import flexibility
-    from src.prompts import (
-        context_mode_prompt,
-        seed_prompt,
-        planning_prompt,
-        result_filter_prompt,
-        query_filter_prompt,
-        search_decision_prompt,
-        response_prompt,
-        response_prompt_no_search,
-    )
-except ImportError:  # pragma: no cover - fallback
-    from prompts import (
-        context_mode_prompt,
-        seed_prompt,
-        planning_prompt,
-        result_filter_prompt,
-        query_filter_prompt,
-        search_decision_prompt,
-        response_prompt,
-        response_prompt_no_search,
-    )
+    _prompts = importlib.import_module("src.prompts")
+except Exception:  # pragma: no cover - fallback
+    _prompts = importlib.import_module("prompts")
 
 from langchain_ollama import OllamaLLM
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:  # only needed for type hints
-    try:
-        from src.config import AgentConfig  # type: ignore
-    except ImportError:  # pragma: no cover - fallback
-        from config import AgentConfig  # type: ignore
+    from src import config as _config
+
+    AgentConfig = _config.AgentConfig
 
 
 def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
@@ -57,16 +41,17 @@ def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
     return llm_robot, llm_assistant
 
 
-def build_chains(llm_robot: OllamaLLM, llm_assistant: OllamaLLM) -> Dict[str, object]:
+def build_chains(llm_robot: OllamaLLM, llm_assistant: OllamaLLM) -> Dict[str, Any]:
     return {
-        "context": context_mode_prompt | llm_robot | StrOutputParser(),
-        "seed": seed_prompt | llm_robot | StrOutputParser(),
-        "planning": planning_prompt | llm_robot | StrOutputParser(),
-        "result_filter": result_filter_prompt | llm_robot | StrOutputParser(),
-        "query_filter": query_filter_prompt | llm_robot | StrOutputParser(),
-        "search_decision": search_decision_prompt | llm_robot | StrOutputParser(),
-        "response": response_prompt | llm_assistant | StrOutputParser(),
-        "response_no_search": response_prompt_no_search | llm_assistant | StrOutputParser(),
+        "context": _prompts.context_mode_prompt | llm_robot | StrOutputParser(),
+        "seed": _prompts.seed_prompt | llm_robot | StrOutputParser(),
+        "planning": _prompts.planning_prompt | llm_robot | StrOutputParser(),
+        "result_filter": _prompts.result_filter_prompt | llm_robot | StrOutputParser(),
+        "query_filter": _prompts.query_filter_prompt | llm_robot | StrOutputParser(),
+        "search_decision": _prompts.search_decision_prompt | llm_robot | StrOutputParser(),
+        "response": _prompts.response_prompt | llm_assistant | StrOutputParser(),
+        "response_no_search": _prompts.response_prompt_no_search | llm_assistant | StrOutputParser(),
     }
+
 
 __all__ = ["build_llms", "build_chains"]

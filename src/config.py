@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+
 @dataclass(slots=True)
 class AgentConfig:
     model: str = "cogito:8b"

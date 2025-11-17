@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re
-from typing import List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 from urllib.parse import urlparse, urlunparse
 
 # Regex/tokenization and stopwords
@@ -88,7 +88,7 @@ def _regex_validate(raw: str, pattern: re.Pattern, default: str) -> str:
 def _truncate_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
-    truncated = text[: max_chars].rsplit(" ", 1)[0].rstrip(".,;:")
+    truncated = text[:max_chars].rsplit(" ", 1)[0].rstrip(".,;:")
     return f"{truncated}..."
 
 
@@ -232,9 +232,7 @@ def _is_relevant(text: str, topic_keywords: Set[str]) -> bool:
 def _format_turns(turns: TopicTurns, fallback: str) -> str:
     if not turns:
         return fallback
-    return "\n\n".join(
-        f"User: {user}\nAssistant: {assistant}" for user, assistant in turns
-    )
+    return "\n\n".join(f"User: {user}\nAssistant: {assistant}" for user, assistant in turns)
 
 
 def _collect_prior_responses(
@@ -250,7 +248,7 @@ def _collect_prior_responses(
     for _, assistant in topic.turns[-limit:]:
         snippet = assistant.strip()
         if len(snippet) > budget:
-            truncated = snippet[: budget].rsplit(" ", 1)[0].rstrip(".,;:")
+            truncated = snippet[:budget].rsplit(" ", 1)[0].rstrip(".,;:")
             snippet = f"{truncated}..."
         snippets.append(snippet)
 
@@ -258,7 +256,7 @@ def _collect_prior_responses(
 
 
 def _select_topic(
-    context_chain: object,
+    context_chain: Any,
     topics: List[Topic],
     question: str,
     base_keywords: Set[str],
