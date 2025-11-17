@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 120
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = false
+warn_return_any = false
+no_implicit_optional = false
