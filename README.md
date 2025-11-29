@@ -343,6 +343,22 @@ Notes:
 
 ## Quick Start Examples
 
+If you've closed your terminals since installing the project, do this first:
+
+- In one terminal:
+
+```bash
+ollama serve
+```
+
+- In another terminal:
+
+```bash
+source .venv/bin/activate
+```
+
+Then continue with the quick start commands in the second terminal.
+
 Interactive session:
 
 ```bash
