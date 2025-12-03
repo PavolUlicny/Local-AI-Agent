@@ -1,16 +1,32 @@
 from __future__ import annotations
 
-from typing import List, Set, TYPE_CHECKING
-import logging
+from typing import Any, List, Set, TYPE_CHECKING
 import hashlib
-import time
+import importlib
+import logging
 import random
-from datetime import datetime, timezone
 import sys
+import time
+from datetime import datetime, timezone
 
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
-import importlib
+PromptSession: Any | None
+ANSI: Any | None
+InMemoryHistory: Any | None
+
+try:
+    from prompt_toolkit import PromptSession as _PromptSession
+    from prompt_toolkit.formatted_text import ANSI as _ANSI
+    from prompt_toolkit.history import InMemoryHistory as _InMemoryHistory
+except ImportError:  # pragma: no cover - fallback when prompt_toolkit missing
+    PromptSession = None
+    ANSI = None
+    InMemoryHistory = None
+else:
+    PromptSession = _PromptSession
+    ANSI = _ANSI
+    InMemoryHistory = _InMemoryHistory
 
 if TYPE_CHECKING:
     from src.config import AgentConfig
@@ -80,6 +96,7 @@ class Agent:
             "answer": 0,
         }
         self.topics: List["Topic"] = []
+        self._prompt_session = None
 
     # Dynamic config updates after rebuild
     def _rebuild_llms(self, new_ctx: int, new_predict: int) -> None:
@@ -137,19 +154,47 @@ class Agent:
         base.update(overrides)
         return base
 
+    def _prompt_messages(self) -> tuple[Any, str]:
+        plain_prompt = "\nEnter your request (or 'exit' to quit): "
+        terminal_prompt = (
+            "\n\033[92mEnter your request (or 'exit' to quit): \033[0m" if sys.stdout.isatty() else plain_prompt
+        )
+        formatted = ANSI(terminal_prompt) if ANSI is not None and sys.stdout.isatty() else terminal_prompt
+        return formatted, terminal_prompt
+
+    def _build_prompt_session(self):
+        if PromptSession is None or InMemoryHistory is None:
+            raise RuntimeError(
+                "prompt_toolkit is required for interactive input; run 'pip install -r requirements.txt'."
+            )
+
+        # prompt_toolkit already wires multiline editing controls (Enter inserts
+        # a newline, while Esc followed by Enter or Ctrl+D submits the buffer).
+        bottom_msg = "Enter adds lines • Esc then Enter submits"
+        return PromptSession(
+            history=InMemoryHistory(),
+            multiline=True,
+            wrap_lines=True,
+            bottom_toolbar=lambda: bottom_msg,
+        )
+
+    def _ensure_prompt_session(self):
+        if self._prompt_session is None:
+            self._prompt_session = self._build_prompt_session()
+        return self._prompt_session
+
+    def _read_user_query(self) -> str:
+        formatted_prompt, _ = self._prompt_messages()
+        session = self._ensure_prompt_session()
+        return session.prompt(formatted_prompt)
+
     def answer_once(self, question: str) -> str:
         return self._handle_query(question, one_shot=True)
 
     def run(self) -> None:  # interactive loop
         while True:
             try:
-                is_tty = sys.stdout.isatty()
-                prompt_text = (
-                    "\n\033[92mEnter your request (or 'exit' to quit): \033[0m"
-                    if is_tty
-                    else "\nEnter your request (or 'exit' to quit): "
-                )
-                user_query = input(prompt_text).strip()
+                user_query = self._read_user_query().strip()
             except (KeyboardInterrupt, EOFError):
                 logging.info("Exiting due to interrupt/EOF.")
                 return
