@@ -800,6 +800,8 @@ class Agent:
             logging.error(f"Streaming error: {exc}")
         if response_chunks and not response_chunks[-1].endswith("\n"):
             print()
+        if one_shot:
+            print()
         response_text = "".join(response_chunks)
         if selected_topic_index is None:
             self.topics.append(_Topic(keywords=set(topic_keywords)))
