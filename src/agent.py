@@ -98,6 +98,19 @@ class Agent:
         self.topics: List["Topic"] = []
         self._prompt_session = None
 
+    def _print_welcome_banner(self) -> None:
+        message = "\n".join(
+            [
+                "Welcome to Local AI Agent.",
+                "Made by Pavol Ulicny.",
+                "Enter submits your message. Type 'exit' to quit.",
+            ]
+        )
+        if sys.stdout.isatty():
+            print(f"\n\033[96m{message}\033[0m")
+        else:
+            print(message)
+
     # Dynamic config updates after rebuild
     def _rebuild_llms(self, new_ctx: int, new_predict: int) -> None:
         self.cfg.num_ctx = new_ctx
@@ -155,12 +168,11 @@ class Agent:
         return base
 
     def _prompt_messages(self) -> tuple[Any, str]:
-        plain_prompt = "\nEnter your request (or 'exit' to quit): "
-        terminal_prompt = (
-            "\n\033[92mEnter your request (or 'exit' to quit): \033[0m" if sys.stdout.isatty() else plain_prompt
-        )
-        formatted = ANSI(terminal_prompt) if ANSI is not None and sys.stdout.isatty() else terminal_prompt
-        return formatted, terminal_prompt
+        plain_prompt = "> "
+        if ANSI is not None and sys.stdout.isatty():
+            formatted = ANSI("\n\033[92m> \033[0m")
+            return formatted, plain_prompt
+        return plain_prompt, plain_prompt
 
     def _build_prompt_session(self):
         if PromptSession is None or InMemoryHistory is None:
@@ -168,14 +180,10 @@ class Agent:
                 "prompt_toolkit is required for interactive input; run 'pip install -r requirements.txt'."
             )
 
-        # prompt_toolkit already wires multiline editing controls (Enter inserts
-        # a newline, while Esc followed by Enter or Ctrl+D submits the buffer).
-        bottom_msg = "Enter adds lines • Esc then Enter submits"
         return PromptSession(
             history=InMemoryHistory(),
-            multiline=True,
+            multiline=False,
             wrap_lines=True,
-            bottom_toolbar=lambda: bottom_msg,
         )
 
     def _ensure_prompt_session(self):
@@ -192,6 +200,7 @@ class Agent:
         return self._handle_query(question, one_shot=True)
 
     def run(self) -> None:  # interactive loop
+        self._print_welcome_banner()
         while True:
             try:
                 user_query = self._read_user_query().strip()
