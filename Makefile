@@ -93,7 +93,7 @@ run-no-search: ## One-shot w/o web search: make run-no-search QUESTION="Derive t
 	@$(PY) -m src.main --model $(MODEL) --no-auto-search --question "$(QUESTION)" $(EXTRA_ARGS)
 
 # Tunables (align with CLI flags, hyphens → underscores). Examples:
-# make run-search QUESTION="Capital of France?" MAX_ROUNDS=1 SEARCH_MAX_RESULTS=2 DDG_BACKEND=html LOG_LEVEL=INFO
+# make run-search QUESTION="Capital of France?" MAX_ROUNDS=1 SEARCH_MAX_RESULTS=2 DDG_BACKEND=duckduckgo LOG_LEVEL=INFO
 run-search: ## One-shot with web search
 	@test -n "$(QUESTION)" || { echo "Provide QUESTION=\"...\""; exit 1; }
 	@$(PY) -m src.main --model $(MODEL) --question "$(QUESTION)" $(EXTRA_ARGS)
