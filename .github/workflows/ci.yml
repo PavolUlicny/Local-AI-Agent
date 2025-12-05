@@ -50,3 +50,7 @@ jobs:
       - name: Run smoke test (no network calls)
         run: |
           python -m scripts.smoke
+
+      - name: Pytest suite
+        run: |
+          pytest

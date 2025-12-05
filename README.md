@@ -424,19 +424,22 @@ Notes:
 
 ## Development
 
+- Install development packages:
+
+```bash
+pip install -r requirements-dev.txt
+pre-commit install
+```
+
 - Pre-commit hooks (format, lint, type-check):
 
 ```bash
-pip install pre-commit
-pre-commit install
-# Run on the whole repo
 pre-commit run --all-files
 ```
 
 - Ruff lint and MyPy type check (mirrors CI):
 
 ```bash
-pip install ruff mypy
 ruff check src scripts
 mypy --config-file=pyproject.toml src
 ```
@@ -445,6 +448,12 @@ mypy --config-file=pyproject.toml src
 
 ```bash
 python3 -m scripts.smoke
+```
+
+- Pytest suite (helpers + mocked agent flow):
+
+```bash
+pytest
 ```
 
 - Run via module entrypoint (recommended):
