@@ -1,6 +1,6 @@
 # Local AI Agent
 
-> An extensible, self-steering local LLM assistant that can optionally enrich answers with iterative, relevance‑filtered DuckDuckGo web searches while tracking multi‑topic conversational context.
+> An extensible, self-steering local LLM assistant that can optionally enrich answers with iterative, relevance‑filtered DDGS (DuckDuckGo/Bing/Brave) web searches while tracking multi‑topic conversational context.
 
 ## Table of Contents
 
@@ -68,7 +68,7 @@ High‑level components and their roles:
 | Prompts (`prompts.py`) | Structured templates for each decision/action stage. |
 | Robot LLM (low temp) | Deterministic classifiers & planners (search decision, relevance, query planning). |
 | Assistant LLM (higher temp) | Final natural‑language answer synthesis. |
-| Search Wrapper | DuckDuckGo results fetch with backoff & retries. |
+| Search Wrapper | DDGS metasearch (DuckDuckGo/Bing/etc.) with backoff & retries. |
 | Topic Manager (`helpers.Topic`) | Maintains per-topic turns & evolving keyword set. |
 | Keyword Utilities | Tokenization, stopword filtering, heuristic numeric filtering. |
 | Rebuild Logic | Detects context length errors and rebuilds prompt chains with reduced parameters. |
@@ -113,7 +113,7 @@ User Input
  ├─► Seed Query Generation
  │
  ├─► Iterative Round Loop (≤ max-rounds)
- │       ├─► Execute Search (DuckDuckGo, N results)
+ │       ├─► Execute Search (DDGS text search, N results)
  │       ├─► Result Relevance Filter (keyword heuristic + LLM YES/NO)
  │       ├─► Keyword Expansion & Dedup
  │       ├─► Planning Prompt (propose new queries)
@@ -154,7 +154,7 @@ Utility layer: tokenization, stopword & numeric heuristic filtering, context/dat
 
 ### `src/agent.py`
 
-Owns the runtime orchestration: topic selection, search decision, seed generation, iterative query planning/filtering, DuckDuckGo retrieval with backoff, deduplication, truncation, answer synthesis with/without search context, interactive loop, and resilience (context‑length rebuilds). Maintains per‑stage rebuild counters.
+Owns the runtime orchestration: topic selection, search decision, seed generation, iterative query planning/filtering, DDGS retrieval with backoff, deduplication, truncation, answer synthesis with/without search context, interactive loop, and resilience (context‑length rebuilds). Maintains per‑stage rebuild counters.
 
 ## Topic & Context Management
 
@@ -185,7 +185,7 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 
 - Graceful handling of missing Ollama model (`ollama pull <model>` hint logged).
 - Detects context length / token window errors and performs controlled recovery: progressively halves `num_ctx` (never below 2048), caps `num_predict` at ≤ 50% of the updated context (never below 512), rebuilds affected chains, and limits attempts per stage via `MAX_REBUILD_RETRIES`.
-- Retries / exponential backoff for DuckDuckGo (rate limit or transient failures) with jitter.
+- Retries / exponential backoff for DDGS providers (rate limit or transient failures) with jitter.
 - Fallback paths: failing seed → use original query; failing planning → skip suggestions; failing relevance → drop result.
 - All LLM classifier outputs are normalized and regex-validated. On malformed output, defaults are stage-specific:
   - Search decision → defaults to SEARCH (expansive)
@@ -218,9 +218,9 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 | `--assistant-top-k` | `80` | Top‑k for assistant model. |
 | `--robot-repeat-penalty` | `1.1` | Repeat penalty robot chain. |
 | `--assistant-repeat-penalty` | `1.2` | Repeat penalty assistant chain. |
-| `--ddg-region` | `us-en` | DuckDuckGo regional variant. |
-| `--ddg-safesearch` | `moderate` | SafeSearch level. |
-| `--ddg-backend` | `html` | Backend mode (html / lite / api). |
+| `--ddg-region` | `us-en` | DDGS regional hint forwarded to providers. |
+| `--ddg-safesearch` | `moderate` | DDGS safe search level. |
+| `--ddg-backend` | `auto` | DDGS backend(s): `auto`, `duckduckgo`, `bing`, `brave`, ... |
 | `--search-max-results` | `5` | Result fetch count per query. |
 | `--search-retries` | `4` | Max retries for failed search. |
 | `--log-level` | `WARNING` | Logging verbosity. |
@@ -252,9 +252,9 @@ Key adjustments when switching models:
 
 Search backend notes:
 
-- `--ddg-backend html` (default): robust, may be slower; lower chance of throttling.
-- `--ddg-backend lite`: lighter HTML; can be faster but returns fewer details.
-- `--ddg-backend api`: fastest when available; can hit rate limits sooner.
+- `--ddg-backend auto` (default): lets DDGS fan out across multiple providers (DuckDuckGo, Bing, Brave, etc.) and deduplicate merged results.
+- `--ddg-backend duckduckgo`: constrain to DuckDuckGo-derived engines for deterministic snippets.
+- `--ddg-backend bing` / `brave` / other provider names: target a single upstream engine when you want stable formatting or to avoid throttling another vendor.
 
 Recommended tuning workflow:
 
@@ -481,8 +481,8 @@ Locally, you can emulate this with the commands in the Development section.
 |---------|-------|--------|
 | `Model 'xyz' not found` | Ollama model not pulled | `ollama pull xyz` then retry. |
 | Frequent context rebuild logs | Oversized conversation or results | Reduce `--max-rounds`, `--max-context-turns`, or initial token settings. |
-| Many rate limit warnings | DuckDuckGo throttling | Lower concurrency (accept defaults) or use backend `html` (default) or `lite`. |
-| Empty search results | Backend HTML scrape variability | Retry with `--ddg-backend api` or broaden query phrasing. |
+| Many rate limit warnings | DDGS provider throttling | Lower concurrency (accept defaults) or narrow `--ddg-backend` to a single engine like `duckduckgo`. |
+| Empty search results | Provider mix mismatch | Retry with a specific backend (`--ddg-backend duckduckgo`/`bing`) or broaden query phrasing. |
 | No new suggestions | Planning chain conservative or truncation | Increase `--max-followup-suggestions` or verify not hitting truncation caps. |
 | `ModuleNotFoundError: No module named 'langchain_community'` | Wrong Python interpreter or deps not installed | Activate the venv and reinstall: `source .venv/bin/activate && pip install -r requirements.txt`. Run via `python -m src.main`. |
 | `pre-commit` alters files locally | Hooks include auto-fixers (ruff). Re-run `git add` after fixes. | Use `pre-commit run --all-files --show-diff-on-failure` in CI modes. |
@@ -490,7 +490,7 @@ Locally, you can emulate this with the commands in the Development section.
 
 ## Security & Safety Notes
 
-- All network calls are outbound DuckDuckGo searches; no external code execution beyond HTTP GET for search pages/snippets.
+- All network calls flow through DDGS text search providers (DuckDuckGo/Bing/Brave); no external code execution beyond HTTP GET for search snippets.
 - User input is directly embedded into prompts; avoid placing secrets or credentials in queries.
 - URL canonicalization strips default ports and `www.` but retains query string—beware PII embedded in copied URLs.
 - The system does not attempt adversarial prompt injection mitigation beyond rigid output regex validation for classifier stages.
@@ -509,12 +509,12 @@ pip-audit
 
 ## Known Limitations
 
-- DuckDuckGo scraping can vary over time; identical queries may yield different snippets or ordering across runs.
+- DDGS provider scraping can vary over time; identical queries may yield different snippets or ordering across runs.
 - The assistant model uses nonzero temperature by default for answers, so responses are not bit‑for‑bit deterministic.
 - No JavaScript execution or full page rendering is performed; only titles, URLs, and snippet text are used, which may miss dynamic content.
 - Topic selection does not perform context‑length rebuilds; if it fails, the system proceeds without selecting a topic for that turn.
 - No persistent storage of conversations beyond process lifetime; restarting the program resets topics and history.
-- Rate limiting by DuckDuckGo may still occur despite retries and backoff; reducing rounds or switching backend can help.
+- Rate limiting by DDGS providers may still occur despite retries and backoff; reducing rounds or switching backend can help.
 - The system does not include adversarial prompt‑injection defenses beyond strict classifier output validation.
 
 ## Contributing
@@ -531,7 +531,7 @@ This project is released under the **MIT License**. See `LICENSE` for full text.
 
 - [LangChain](https://github.com/langchain-ai/langchain) for prompt/chain abstractions.
 - [Ollama](https://ollama.com/) for local model serving.
-- DuckDuckGo search wrapper from `langchain_community`.
+- [DDGS](https://pypi.org/project/ddgs/) for resilient multi-provider search.
 
 ---
 For questions, improvements, or integration ideas, feel free to open issues or submit PRs.

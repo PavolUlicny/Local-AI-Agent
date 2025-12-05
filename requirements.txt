@@ -5,7 +5,7 @@ langchain-core>=0.2,<0.3
 langchain-ollama>=0.1,<0.2
 
 # Search
-duckduckgo-search>=5,<6
+ddgs>=9.9,<10
 lxml>=4.9,<6
 
 # Local Ollama Python bindings (separate from the Ollama runtime)

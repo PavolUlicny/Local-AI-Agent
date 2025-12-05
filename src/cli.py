@@ -75,15 +75,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=defaults.assistant_repeat_penalty,
         help="Repeat penalty for assistant LLM",
     )
-    parser.add_argument("--ddg-region", default=defaults.ddg_region, help="DuckDuckGo region, e.g. us-en, uk-en, de-de")
+    parser.add_argument("--ddg-region", default=defaults.ddg_region, help="DDGS region hint, e.g. us-en, uk-en, de-de")
     parser.add_argument(
         "--ddg-safesearch",
         default=defaults.ddg_safesearch,
         choices=["off", "moderate", "strict"],
-        help="DuckDuckGo safesearch level",
+        help="DDGS safesearch level",
     )
     parser.add_argument(
-        "--ddg-backend", default=defaults.ddg_backend, choices=["html", "lite", "api"], help="DuckDuckGo backend to use"
+        "--ddg-backend",
+        default=defaults.ddg_backend,
+        help=(
+            "Comma-separated DDGS backends. Use 'auto' for provider mix or pick engines like duckduckgo, bing, brave."
+        ),
     )
     parser.add_argument(
         "--search-max-results", type=int, default=defaults.search_max_results, help="Max results to fetch per query"

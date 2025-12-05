@@ -3,6 +3,8 @@ from __future__ import annotations
 import dataclasses
 import sys
 
+import ddgs
+
 
 def main() -> int:
     # Ensure project root on path if executed directly
@@ -30,7 +32,7 @@ def main() -> int:
                 return 1
 
         # 2) Instantiate Agent without invoking LLM or network
-        #    (OllamaLLM objects are lazily used; DuckDuckGo wrapper is constructed only.)
+        #    (OllamaLLM objects are lazily used; DDGS client is constructed only.)
         cfg = AgentConfig(
             no_auto_search=True,
             question="healthcheck",
@@ -73,13 +75,12 @@ def main() -> int:
             print("LLM_PARAM_MISMATCH: num_ctx/num_predict not applied")
             return 1
 
-        # 5) Search wrapper aligned with config
-        if not (
-            agent.search_api.region == cfg.ddg_region
-            and agent.search_api.safesearch == cfg.ddg_safesearch
-            and agent.search_api.backend == cfg.ddg_backend
-        ):
-            print("SEARCH_WRAPPER_MISMATCH: ddg settings not applied")
+        # 5) DDGS search client instantiated
+        if not hasattr(agent, "search_client"):
+            print("SEARCH_WRAPPER_MISSING: search client attribute absent")
+            return 1
+        if not isinstance(agent.search_client, ddgs.DDGS):
+            print("SEARCH_WRAPPER_MISMATCH: search client not DDGS")
             return 1
 
         print("SMOKE_OK")

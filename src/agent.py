@@ -9,7 +9,8 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+from ddgs import DDGS
+from ddgs.exceptions import DDGSException, TimeoutException
 
 PromptSession: Any | None
 ANSI: Any | None
@@ -84,9 +85,7 @@ class Agent:
         self.cfg = cfg
         self.llm_robot, self.llm_assistant = build_llms(cfg)
         self.chains = build_chains(self.llm_robot, self.llm_assistant)
-        self.search_api = DuckDuckGoSearchAPIWrapper(
-            region=cfg.ddg_region, safesearch=cfg.ddg_safesearch, backend=cfg.ddg_backend
-        )
+        self.search_client = DDGS()
         self.rebuild_counts = {
             "search_decision": 0,
             "seed": 0,
@@ -131,20 +130,54 @@ class Agent:
         delay = 1.0
         for attempt in range(1, self.cfg.search_retries + 1):
             try:
-                return self.search_api.results(query, max_results=self.cfg.search_max_results)
+                raw_results = self.search_client.text(
+                    query,
+                    region=self.cfg.ddg_region,
+                    safesearch=self.cfg.ddg_safesearch,
+                    backend=self.cfg.ddg_backend,
+                    max_results=self.cfg.search_max_results,
+                )
+                results: List[dict] = []
+                for entry in raw_results or []:
+                    normalized = self._normalize_search_result(entry)
+                    if normalized:
+                        results.append(normalized)
+                return results
+            except TimeoutException as exc:  # pragma: no cover - network
+                logging.warning(
+                    f"Search timeout for '{query}' (attempt {attempt}/{self.cfg.search_retries}); sleeping {delay:.1f}s"
+                )
+                logging.debug("Timeout details: %s", exc)
+            except DDGSException as exc:  # pragma: no cover - network
+                logging.warning(f"DDGS search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}")
             except Exception as exc:  # pragma: no cover - network
-                msg = str(exc)
-                is_rate = "Ratelimit" in msg or "429" in msg or " 202 " in msg or "rate limit" in msg.lower()
-                if is_rate:
-                    logging.warning(
-                        f"Rate limited for '{query}' (attempt {attempt}/{self.cfg.search_retries}); sleeping {delay:.1f}s"
-                    )
-                else:
-                    logging.warning(f"Search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}")
-                time.sleep(delay + (random.random() * 0.5))
-                delay = min(delay * 2.0, 8.0)
+                logging.warning(
+                    f"Unexpected search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}"
+                )
+            time.sleep(delay + (random.random() * 0.5))
+            delay = min(delay * 2.0, 8.0)
         logging.warning(f"Search failed after {self.cfg.search_retries} attempts for '{query}'.")
         return []
+
+    def _normalize_search_result(self, raw_result: dict[str, Any]) -> dict[str, str] | None:
+        title = str(raw_result.get("title") or "").strip()
+        snippet = str(
+            raw_result.get("body")
+            or raw_result.get("snippet")
+            or raw_result.get("description")
+            or raw_result.get("content")
+            or ""
+        ).strip()
+        link = str(
+            raw_result.get("href")
+            or raw_result.get("url")
+            or raw_result.get("image")
+            or raw_result.get("embed_url")
+            or ""
+        ).strip()
+        if not any([title, snippet, link]):
+            return None
+        return {"title": title, "link": link, "snippet": snippet}
 
     def _inputs(
         self,

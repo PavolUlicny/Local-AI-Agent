@@ -24,7 +24,7 @@ class AgentConfig:
     assistant_repeat_penalty: float = 1.2
     ddg_region: str = "us-en"
     ddg_safesearch: str = "moderate"
-    ddg_backend: str = "html"
+    ddg_backend: str = "auto"
     search_max_results: int = 5
     search_retries: int = 4
     log_level: str = "WARNING"
