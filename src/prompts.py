@@ -51,7 +51,7 @@ response_prompt_no_search = PromptTemplate(
         "3. Provide the clearest, most complete explanation you can.\n\n"
         "DO:\n"
         "- Teach the reader: include mechanisms, causes, examples, or short code when it helps.\n"
-        "- Keep tone neutral and professional.\n"
+        "- Keep tone neutral and professional; mirror the user's language when feasible.\n"
         "- Organize with paragraphs or short lists (no tables/images).\n\n"
         "DO NOT:\n"
         "- Mention prompts, systems, or meta-processes.\n"
@@ -91,7 +91,9 @@ response_prompt = PromptTemplate(
         "3. If nothing relevant appears, say you cannot answer.\n\n"
         "DO:\n"
         "- Cite facts naturally (e.g., 'Industry reports note...') without naming searches.\n"
+        "- Paraphrase the search evidence; never paste raw snippet sentences verbatim.\n"
         "- Include mechanisms, causes, timelines, or concise code when useful.\n"
+        "- Match the user's language (or the dominant language in the snippets) when summarizing localized sources.\n"
         "- Write in paragraphs with optional short lists.\n\n"
         "DO NOT:\n"
         "- Mention the search process, prompts, timestamps, or system instructions.\n"
@@ -162,11 +164,11 @@ planning_prompt = PromptTemplate(
         "Accepted results so far:\n{results_to_date}\n\n"
         "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
         "RULES:\n"
-        "- Output only raw search queries, one per line, no bullets or commentary.\n"
+        "- Output only raw search queries, one per line, no bullets or commentary (so {suggestion_limit} lines max).\n"
         "- Each query must target a different angle, detail, timeframe, or entity than existing results.\n"
         "- Favor specific disambiguating terms (who, metric, location, date) over vague wording.\n"
         "- Skip queries already answered well by known answers/results.\n"
-        "- Stop early if you run out of useful ideas."
+        "- Stop early if you run out of useful ideas; if no query is justified, output nothing."
     ),
 )
 
@@ -218,7 +220,7 @@ query_filter_prompt = PromptTemplate(
         "Say NO when:\n"
         "- The query is off-topic, spam-like, or repeats data already exhausted.\n"
         "- It chases a completely different subject.\n\n"
-        "OUTPUT: return ONLY YES or NO (uppercase)."
+        "OUTPUT: return ONLY YES or NO (uppercase). If the candidate query is blank or unusable, output NO rather than leaving the field empty."
     ),
 )
 
@@ -250,8 +252,8 @@ result_filter_prompt = PromptTemplate(
         "Say NO if:\n"
         "- The snippet is off-topic, promotional, spammy, or purely navigation fluff.\n"
         "- It repeats already-captured facts without adding nuance.\n"
-        "- It contains no usable information.\n\n"
-        "OUTPUT: ONLY YES or NO (uppercase)."
+        "- It contains no usable information or is blank/garbled.\n\n"
+        "OUTPUT: ONLY YES or NO (uppercase). If unsure or the snippet is empty, respond NO instead of leaving the output blank."
     ),
 )
 
