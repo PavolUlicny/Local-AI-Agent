@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Set, Tuple
 from urllib.parse import urlparse, urlunparse
 
 # Regex/tokenization and stopwords
-_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9']+")
+_TOKEN_PATTERN = re.compile(r"[\w']+", re.UNICODE)
 _STOP_WORDS: Set[str] = {
     "and",
     "about",
@@ -201,6 +201,12 @@ def _pick_seed_query(seed_text: str, fallback: str) -> str:
 TopicTurns = List[Tuple[str, str]]
 
 
+def _tail_turns(turns: TopicTurns, limit: int) -> TopicTurns:
+    if limit is None or limit <= 0:
+        return []
+    return turns[-limit:]
+
+
 @dataclass
 class Topic:
     keywords: Set[str] = field(default_factory=set)
@@ -211,7 +217,7 @@ def _extract_keywords(text: str) -> Set[str]:
     if not text:
         return set()
     tokens = _TOKEN_PATTERN.findall(text.lower())
-    cleaned = {token.strip("\"'.!?") for token in tokens}
+    cleaned = {token.strip("_\"'.!?") for token in tokens}
     return {
         token
         for token in cleaned
@@ -281,7 +287,7 @@ def _select_topic(
     decisions: List[Tuple[str, int, TopicTurns]] = []
     for _, idx in top_candidates:
         topic = topics[idx]
-        recent_turns = topic.turns[-max_context_turns:]
+        recent_turns = _tail_turns(topic.turns, max_context_turns)
         try:
             decision_raw = context_chain.invoke(
                 {
