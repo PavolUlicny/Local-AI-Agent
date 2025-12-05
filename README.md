@@ -403,7 +403,7 @@ make ask QUESTION="What is 2+2?"
 # One-shot without web search
 make run-no-search QUESTION="Derive the quadratic formula"
 
-# One-shot with web search (pin DuckDuckGo to keep snippets consistent)
+# One-shot configured for web search (auto gate may still choose NO_SEARCH)
 make run-search QUESTION="Capital of France?" MAX_ROUNDS=1 SEARCH_MAX_RESULTS=2 DDG_BACKEND=duckduckgo LOG_LEVEL=INFO
 
 # Health checks
@@ -417,7 +417,7 @@ make clean
 Notes:
 
 - Override `MODEL` in `make dev-setup MODEL=<name:tag>` to pull a different model.
-- `run-search` tunables: `MAX_ROUNDS`, `SEARCH_MAX_RESULTS`, `DDG_BACKEND`, `LOG_LEVEL` (inherits CLI defaults unless overridden: `12`, `5`, `auto`, `WARNING`).
+- `run-search` tunables: `MAX_ROUNDS`, `SEARCH_MAX_RESULTS`, `DDG_BACKEND`, `LOG_LEVEL` (inherits CLI defaults unless overridden: `12`, `5`, `auto`, `WARNING`). The target simply wires these flags through—automatic search gating still decides whether each question actually hits the web.
 - Supported DDGS backend names include `duckduckgo`, `bing`, `brave`, `google`, `mojeek`, `wikipedia`, `yahoo`, and `yandex`; use `auto` (default) to fan out across providers.
 - `NO_AUTO_SEARCH` is treated as a boolean flag. Only truthy values enable it: `1,true,TRUE,yes,YES,on,ON`. Setting `NO_AUTO_SEARCH=0` will not enable the flag.
 - `LOG_FILE` supports paths with spaces (quoted automatically). Example: `make run LOG_FILE="/tmp/agent logs/agent.log"`.
