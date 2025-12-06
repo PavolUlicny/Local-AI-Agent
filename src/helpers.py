@@ -50,6 +50,44 @@ _STOP_WORDS: Set[str] = {
     "would",
 }
 _GENERIC_TOKENS: Set[str] = {"question", "questions", "info"}
+_FOLLOWUP_PRONOUNS: Set[str] = {
+    "it",
+    "its",
+    "they",
+    "them",
+    "their",
+    "theirs",
+    "this",
+    "that",
+    "those",
+    "these",
+    "there",
+    "thereof",
+}
+_FOLLOWUP_HINT_TOKENS: Set[str] = {
+    "cost",
+    "price",
+    "one",
+    "same",
+    "again",
+    "more",
+    "details",
+    "info",
+    "about",
+}
+_FOLLOWUP_PREFIXES = (
+    "how much",
+    "how many",
+    "what about",
+    "how about",
+    "and what",
+    "and how",
+    "tell me more",
+    "is it",
+    "are they",
+    "does it",
+    "can it",
+)
 
 # Patterns used for strict validation of LLM outputs
 _PATTERN_SEARCH_DECISION = re.compile(r"^(SEARCH|NO_SEARCH)$")
@@ -210,6 +248,27 @@ def _tail_turns(turns: TopicTurns, limit: int) -> TopicTurns:
     return turns[-limit:]
 
 
+def _looks_like_followup(question: str, keywords: Set[str]) -> bool:
+    lowered = question.lower().strip()
+    if not lowered:
+        return False
+    tokens = _TOKEN_PATTERN.findall(lowered)
+    if not tokens:
+        return False
+    pronoun_hits = sum(1 for token in tokens if token in _FOLLOWUP_PRONOUNS)
+    referential_hits = sum(1 for token in tokens if token in _FOLLOWUP_HINT_TOKENS)
+    if pronoun_hits and len(tokens) <= 6:
+        return True
+    if pronoun_hits and referential_hits:
+        return True
+    if pronoun_hits and len(keywords) <= 2:
+        return True
+    for prefix in _FOLLOWUP_PREFIXES:
+        if lowered.startswith(prefix):
+            return True
+    return False
+
+
 @dataclass
 class Topic:
     keywords: Set[str] = field(default_factory=set)
@@ -349,6 +408,11 @@ def _select_topic(
     top_candidates = candidates[:3]
 
     if not top_candidates:
+        if _looks_like_followup(question, base_keywords):
+            fallback_idx = len(topics) - 1
+            fallback_topic = topics[fallback_idx]
+            recent_turns = _tail_turns(fallback_topic.turns, max_context_turns)
+            return fallback_idx, recent_turns, base_keywords.union(fallback_topic.keywords)
         return None, [], set(base_keywords)
 
     decisions: List[Tuple[str, int, TopicTurns]] = []
