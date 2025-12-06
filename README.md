@@ -460,7 +460,7 @@ python -m src.main --max-rounds 20 --search-max-results 8
 
 These shortcuts mirror the CLI and help standardize local runs. All commands assume bash and a local `.venv`.
 
-Windows:
+- Windows:
 
 - Windows does not ship with GNU Make or a POSIX shell. Install them via Git for Windows (Git Bash), MSYS2, WSL, or `choco install make` if you want to run the targets verbatim.
 - If you prefer to stay in PowerShell/CMD, run the underlying Python commands directly:
@@ -483,6 +483,8 @@ python -m scripts.smoke
 ```
 
 Reuse the Quick Start / Development sections for Windows-specific venv activation (`.\.venv\Scripts\activate`) and installation steps before running these commands.
+
+- Linux (or Windows if `Make` is installed):
 
 `Make` package needed to run these commands.
 
