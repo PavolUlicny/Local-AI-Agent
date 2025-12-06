@@ -52,10 +52,13 @@ Design goals:
 - Dual relevance filters:
   - Lightweight keyword intersection check.
   - LLM YES/NO validation for borderline cases (capped by `--max-relevance-llm-checks`).
-- Query gating (LLM YES/NO) to avoid off‑topic expansion.
+  - Semantic embedding similarity that auto-accepts high-similarity snippets before the LLM runs.
+- Query gating (LLM YES/NO) to avoid off-topic expansion, with embeddings pre-filtering clearly unrelated suggestions.
 - Result deduplication (canonicalized URLs + SHA‑1 hash of assembled title/URL/snippet).
 - Adaptive truncation of large text sections (conversation, prior answers, search corpus) with sensible cut heuristics.
 - Multi‑topic memory with keyword pruning and turn window constraints.
+- Semantic topic recall powered by configurable Ollama embeddings (defaults to `embeddinggemma:300m`).
+- Embedding-assisted relevance and query gating that skip unnecessary LLM checks when semantic similarity is decisive.
 - Automatic recovery from context length errors (progressive halving of `num_ctx` and `num_predict`).
 - One‑shot mode via `--question` (non‑interactive).
 
@@ -160,9 +163,11 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 
 - Each topic retains a list of `(user, assistant)` turns.
 - On each new query, `_select_topic` attempts to classify relationship (FOLLOW_UP / EXPAND / NEW_TOPIC) via a dedicated chain. If no sufficiently overlapping keywords, a new topic begins.
+- A semantic embedding (default: `embeddinggemma:300m`) is blended into each topic so cosine similarity can rescue related follow-ups even when keywords diverge.
 - Topics exceeding `MAX_TOPICS` are pruned FIFO.
 - Turn history per topic is trimmed to `max_context_turns * 2` preserving a sliding window.
 - Keywords aggregated from user query, assistant answer, and truncated search result text; pruned to `MAX_TOPIC_KEYWORDS` by frequency ordering.
+- Search result snippets and follow-up queries also leverage embeddings: high-similarity snippets can bypass the LLM relevance gate, while clearly off-topic query suggestions are dropped before invoking the classifier.
 
 ## Search Strategy & Filtering
 
@@ -226,6 +231,11 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 | `--log-level` | `WARNING` | Logging verbosity. |
 | `--log-file` | `None` | Optional file log path. |
 | `--question` | `None` | One‑shot non‑interactive question mode. |
+| `--embedding-model` | `embeddinggemma:300m` | Ollama embedding model used for topic similarity checks. |
+| `--embedding-similarity-threshold` | `0.35` | Minimum cosine similarity for a topic to be considered when no keywords overlap. |
+| `--embedding-history-decay` | `0.65` | Weight [0-1) that keeps prior topic embeddings when blending in a new turn (lower = faster adaptation). |
+| `--embedding-result-similarity-threshold` | `0.5` | Semantic similarity needed for a search result to skip the LLM relevance gate. |
+| `--embedding-query-similarity-threshold` | `0.3` | Minimum similarity before a planned query is passed to the LLM query filter. |
 
 ## Using Different Models
 
@@ -334,12 +344,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
-ollama pull cogito:8b   # or your chosen model
+ollama pull cogito:8b             # or your chosen chat model
+ollama pull embeddinggemma:300m   # default embedding model for topic/relevance memory
 ```
 
 Notes:
 
 - The Python package `ollama` in `requirements.txt` is only used for optional exception typing. LangChain communicates with the Ollama server directly; the pip package is not strictly required at runtime if the server is available (keeping it installed is harmless).
+- If you swap embedding models, update `--embedding-model` (or `EMBEDDING_MODEL` in the Makefile) and pull it once via `ollama pull <model>` so the semantic memory checks can initialize.
 
 ## Quick Start Examples
 
@@ -421,6 +433,7 @@ Notes:
 - Supported DDGS backend names include `duckduckgo`, `bing`, `brave`, `google`, `mojeek`, `wikipedia`, `yahoo`, and `yandex`; use `auto` (default) to fan out across providers.
 - `NO_AUTO_SEARCH` is treated as a boolean flag. Only truthy values enable it: `1,true,TRUE,yes,YES,on,ON`. Setting `NO_AUTO_SEARCH=0` will not enable the flag.
 - `LOG_FILE` supports paths with spaces (quoted automatically). Example: `make run LOG_FILE="/tmp/agent logs/agent.log"`.
+- Embedding knobs are mirrored as environment variables: `EMBEDDING_MODEL`, `EMBEDDING_SIMILARITY_THRESHOLD`, `EMBEDDING_HISTORY_DECAY`, `EMBEDDING_RESULT_SIMILARITY_THRESHOLD`, and `EMBEDDING_QUERY_SIMILARITY_THRESHOLD` feed the same CLI flags (e.g., `make run EMBEDDING_MODEL=embeddinggemma:300m`).
 
 ## Development
 
