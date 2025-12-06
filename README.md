@@ -390,14 +390,14 @@ ollama serve
 
 - In another terminal:
 
-- Linux:
+Linux:
 
 ```bash
 cd Local-AI-Agent
 source .venv/bin/activate
 ```
 
-- Windows:
+Windows:
 
 ```bash
 cd Local-AI-Agent
@@ -549,13 +549,13 @@ mypy --config-file=pyproject.toml src tests
 
 - Smoke test (no network calls):
 
-- Linux:
+Linux:
 
 ```bash
 python3 -m scripts.smoke
 ```
 
-- Windows:
+Windows:
 
 ```bash
 python -m scripts.smoke
@@ -569,13 +569,13 @@ pytest
 
 - Run via module entrypoint (recommended):
 
-- Linux:
+Linux:
 
 ```bash
 python3 -m src.main --question "Hello"
 ```
 
-- Windows:
+Windows:
 
 ```bash
 python -m src.main --question "Hello"
