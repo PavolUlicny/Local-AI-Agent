@@ -440,8 +440,8 @@ pre-commit run --all-files
 - Ruff lint and MyPy type check (mirrors CI):
 
 ```bash
-ruff check src scripts
-mypy --config-file=pyproject.toml src
+ruff check src tests scripts
+mypy --config-file=pyproject.toml src tests
 ```
 
 - Smoke test (no network calls):
@@ -466,8 +466,8 @@ python3 -m src.main --question "Hello"
 
 - GitHub Actions workflow (`.github/workflows/ci.yml`) runs on pushes/PRs to `main`:
   - `pre-commit run --all-files` (includes ruff fix/format and mypy)
-  - `ruff check src scripts`
-  - `mypy src`
+  - `ruff check src tests scripts`
+  - `mypy src tests`
   - `python -m scripts.smoke` (no-network smoke test)
 
 Locally, you can emulate this with the commands in the Development section.
