@@ -95,3 +95,32 @@ def test_select_topic_uses_embeddings_when_keywords_absent() -> None:
     assert idx == 0
     assert turns  # recent history returned
     assert keywords == set()
+
+
+def test_looks_like_followup_detects_short_pronoun_question() -> None:
+    assert H._looks_like_followup("how much does it cost?", {"gpu"}) is True
+    assert H._looks_like_followup("explain gpu memory bandwidth", {"gpu"}) is False
+
+
+def test_select_topic_fallbacks_to_latest_topic_on_followup() -> None:
+    chain = _StubContextChain(["NEW_TOPIC"])  # unused but required parameter
+    first_topic = H.Topic(keywords={"workstation"}, turns=[("what's new?", "answer1")])
+    latest_topic = H.Topic(keywords={"gpu"}, turns=[("what is the best gpu?", "answer2")])
+
+    idx, turns, keywords = H._select_topic(
+        chain,
+        [first_topic, latest_topic],
+        question="how much does it cost?",
+        base_keywords={"cost"},
+        max_context_turns=2,
+        current_datetime="2025-01-01 00:00:00 UTC",
+        current_year="2025",
+        current_month="01",
+        current_day="01",
+        question_embedding=None,
+        embedding_threshold=0.5,
+    )
+
+    assert idx == 1  # picks most recent topic
+    assert turns == latest_topic.turns[-2:]
+    assert keywords.issuperset({"cost", "gpu"})
