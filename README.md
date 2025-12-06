@@ -204,39 +204,39 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 
 ## CLI Arguments
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--model` | `cogito:8b` | Ollama model name/tag. |
-| `--no-auto-search` | off | Force NO_SEARCH unless logic changed manually. |
-| `--max-rounds` | `12` | Upper bound on search query rounds (seed + planned). |
-| `--max-context-turns` | `8` | Turns retained from a topic for context injection. |
-| `--max-followup-suggestions` | `6` | Max query suggestions per planning cycle. |
-| `--max-fill-attempts` | `3` | Extra planning passes to fill remaining slots. |
-| `--max-relevance-llm-checks` | `2` | LLM relevance validations for borderline results per query. |
-| `--num-ctx` | `12288` | Initial context window tokens. |
-| `--num-predict` | `8192` | Initial generation cap tokens. |
-| `--robot-temp` | `0.0` | Temperature for classifier/planner chains. |
-| `--assistant-temp` | `0.6` | Temperature for final answer chain. |
-| `--robot-top-p` | `0.4` | Top‑p for robot model. |
-| `--assistant-top-p` | `0.8` | Top‑p for assistant model. |
-| `--robot-top-k` | `20` | Top‑k for robot model. |
-| `--assistant-top-k` | `80` | Top‑k for assistant model. |
-| `--robot-repeat-penalty` | `1.1` | Repeat penalty robot chain. |
-| `--assistant-repeat-penalty` | `1.2` | Repeat penalty assistant chain. |
-| `--ddg-region` | `us-en` | DDGS regional hint forwarded to providers. |
-| `--ddg-safesearch` | `moderate` | DDGS safe search level. |
-| `--ddg-backend` | `auto` | DDGS backend(s): `auto`, `duckduckgo`, `bing`, `brave`, ... |
-| `--search-max-results` | `5` | Result fetch count per query. |
-| `--search-retries` | `4` | Max retries for failed search. |
-| `--log-level` | `WARNING` | Logging verbosity. |
-| `--log-file` | `None` | Optional file log path. |
-| `--log-console` | `on` | Emit logs to stderr when enabled; pass `--no-log-console` to keep the console clean. Without `--log-file`, logs are discarded. |
-| `--question` | `None` | One‑shot non‑interactive question mode. |
-| `--embedding-model` | `embeddinggemma:300m` | Ollama embedding model used for topic similarity checks. |
-| `--embedding-similarity-threshold` | `0.35` | Minimum cosine similarity for a topic to be considered when no keywords overlap. |
-| `--embedding-history-decay` | `0.65` | Weight [0-1) that keeps prior topic embeddings when blending in a new turn (lower = faster adaptation). |
-| `--embedding-result-similarity-threshold` | `0.5` | Semantic similarity needed for a search result to skip the LLM relevance gate. |
-| `--embedding-query-similarity-threshold` | `0.3` | Minimum similarity before a planned query is passed to the LLM query filter. |
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--model` | `--m` | `cogito:8b` | Ollama model name/tag. |
+| `--no-auto-search` | `--nas` | off | Force NO_SEARCH unless logic changed manually. |
+| `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds (seed + planned). |
+| `--max-context-turns` | `--mct` | `8` | Turns retained from a topic for context injection. |
+| `--max-followup-suggestions` | `--mfs` | `6` | Max query suggestions per planning cycle. |
+| `--max-fill-attempts` | `--mfa` | `3` | Extra planning passes to fill remaining slots. |
+| `--max-relevance-llm-checks` | `--mrlc` | `2` | LLM relevance validations for borderline results per query. |
+| `--num-ctx` | `--nc` | `12288` | Initial context window tokens. |
+| `--num-predict` | `--np` | `8192` | Initial generation cap tokens. |
+| `--robot-temp` | `--rt` | `0.0` | Temperature for classifier/planner chains. |
+| `--assistant-temp` | `--at` | `0.6` | Temperature for final answer chain. |
+| `--robot-top-p` | `--rtp` | `0.4` | Top-p for robot model. |
+| `--assistant-top-p` | `--atp` | `0.8` | Top-p for assistant model. |
+| `--robot-top-k` | `--rtk` | `20` | Top-k for robot model. |
+| `--assistant-top-k` | `--atk` | `80` | Top-k for assistant model. |
+| `--robot-repeat-penalty` | `--rrp` | `1.1` | Repeat penalty robot chain. |
+| `--assistant-repeat-penalty` | `--arp` | `1.2` | Repeat penalty assistant chain. |
+| `--ddg-region` | `--dr` | `us-en` | DDGS regional hint forwarded to providers. |
+| `--ddg-safesearch` | `--dss` | `moderate` | DDGS safe search level. |
+| `--ddg-backend` | `--db` | `auto` | DDGS backend(s): `auto`, `duckduckgo`, `bing`, `brave`, ... |
+| `--search-max-results` | `--smr` | `5` | Result fetch count per query. |
+| `--search-retries` | `--sr` | `4` | Max retries for failed search. |
+| `--log-level` | `--ll` | `WARNING` | Logging verbosity. |
+| `--log-file` | `--lf` | `None` | Optional file log path. |
+| `--log-console` | `--lc` | `on` | Emit logs to stderr when enabled; pass `--no-log-console` to keep the console clean. Without `--log-file`, logs are discarded. |
+| `--question` | `--q` | `None` | One-shot non-interactive question mode. |
+| `--embedding-model` | `--em` | `embeddinggemma:300m` | Ollama embedding model used for topic similarity checks. |
+| `--embedding-similarity-threshold` | `--est` | `0.35` | Minimum cosine similarity for a topic to be considered when no keywords overlap. |
+| `--embedding-history-decay` | `--ehd` | `0.65` | Weight [0-1) that keeps prior topic embeddings when blending in a new turn (lower = faster adaptation). |
+| `--embedding-result-similarity-threshold` | `--erst` | `0.5` | Semantic similarity needed for a search result to skip the LLM relevance gate. |
+| `--embedding-query-similarity-threshold` | `--eqst` | `0.3` | Minimum similarity before a planned query is passed to the LLM query filter. |
 
 ## Using Different Models
 
