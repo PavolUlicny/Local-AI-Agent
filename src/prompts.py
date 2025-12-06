@@ -91,7 +91,7 @@ response_prompt = PromptTemplate(
         "2. Merge overlapping points into a coherent explanation.\n"
         "3. If nothing relevant appears, say you cannot answer.\n\n"
         "DO:\n"
-        "- Cite facts naturally (e.g., 'Industry reports note...') without naming searches.\n"
+        "- Cite facts naturally without naming searches.\n"
         "- Paraphrase the search evidence; never paste raw snippet sentences verbatim.\n"
         "- Include mechanisms, causes, timelines, or concise code when useful.\n"
         "- Match the user's language (or the dominant language in the snippets) when summarizing localized sources.\n"
