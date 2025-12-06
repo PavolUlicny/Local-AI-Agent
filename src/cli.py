@@ -25,110 +25,147 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     defaults: "AgentConfig" = cast("type[AgentConfig]", _AgentConfig)()
 
-    parser.add_argument("--model", default=defaults.model, help="Ollama model to use")
+    parser.add_argument("--model", "--m", default=defaults.model, help="Ollama model to use")
     parser.add_argument(
         "--no-auto-search",
+        "--nas",
         action="store_true",
         default=defaults.no_auto_search,
         help="Disable automatic web search decision",
     )
-    parser.add_argument("--max-rounds", type=int, default=defaults.max_rounds, help="Maximum search rounds")
+    parser.add_argument("--max-rounds", "--mr", type=int, default=defaults.max_rounds, help="Maximum search rounds")
     parser.add_argument(
         "--max-context-turns",
+        "--mct",
         type=int,
         default=defaults.max_context_turns,
         help="Max turns from topic to keep in context",
     )
     parser.add_argument(
         "--max-followup-suggestions",
+        "--mfs",
         type=int,
         default=defaults.max_followup_suggestions,
         help="Max planning suggestions per cycle",
     )
     parser.add_argument(
-        "--max-fill-attempts", type=int, default=defaults.max_fill_attempts, help="How many planning fill attempts"
+        "--max-fill-attempts",
+        "--mfa",
+        type=int,
+        default=defaults.max_fill_attempts,
+        help="How many planning fill attempts",
     )
     parser.add_argument(
         "--max-relevance-llm-checks",
+        "--mrlc",
         type=int,
         default=defaults.max_relevance_llm_checks,
         help="LLM checks allowed for borderline relevance",
     )
-    parser.add_argument("--num-ctx", type=int, default=defaults.num_ctx, help="Model context window tokens")
-    parser.add_argument("--num-predict", type=int, default=defaults.num_predict, help="Max tokens to predict")
-    parser.add_argument("--robot-temp", type=float, default=defaults.robot_temp, help="Temperature for robot LLM")
+    parser.add_argument("--num-ctx", "--nc", type=int, default=defaults.num_ctx, help="Model context window tokens")
+    parser.add_argument("--num-predict", "--np", type=int, default=defaults.num_predict, help="Max tokens to predict")
     parser.add_argument(
-        "--assistant-temp", type=float, default=defaults.assistant_temp, help="Temperature for assistant LLM"
+        "--robot-temp", "--rt", type=float, default=defaults.robot_temp, help="Temperature for robot LLM"
     )
-    parser.add_argument("--robot-top-p", type=float, default=defaults.robot_top_p, help="Top-p for robot LLM")
     parser.add_argument(
-        "--assistant-top-p", type=float, default=defaults.assistant_top_p, help="Top-p for assistant LLM"
+        "--assistant-temp", "--at", type=float, default=defaults.assistant_temp, help="Temperature for assistant LLM"
     )
-    parser.add_argument("--robot-top-k", type=int, default=defaults.robot_top_k, help="Top-k for robot LLM")
-    parser.add_argument("--assistant-top-k", type=int, default=defaults.assistant_top_k, help="Top-k for assistant LLM")
+    parser.add_argument("--robot-top-p", "--rtp", type=float, default=defaults.robot_top_p, help="Top-p for robot LLM")
     parser.add_argument(
-        "--robot-repeat-penalty", type=float, default=defaults.robot_repeat_penalty, help="Repeat penalty for robot LLM"
+        "--assistant-top-p", "--atp", type=float, default=defaults.assistant_top_p, help="Top-p for assistant LLM"
+    )
+    parser.add_argument("--robot-top-k", "--rtk", type=int, default=defaults.robot_top_k, help="Top-k for robot LLM")
+    parser.add_argument(
+        "--assistant-top-k", "--atk", type=int, default=defaults.assistant_top_k, help="Top-k for assistant LLM"
+    )
+    parser.add_argument(
+        "--robot-repeat-penalty",
+        "--rrp",
+        type=float,
+        default=defaults.robot_repeat_penalty,
+        help="Repeat penalty for robot LLM",
     )
     parser.add_argument(
         "--assistant-repeat-penalty",
+        "--arp",
         type=float,
         default=defaults.assistant_repeat_penalty,
         help="Repeat penalty for assistant LLM",
     )
-    parser.add_argument("--ddg-region", default=defaults.ddg_region, help="DDGS region hint, e.g. us-en, uk-en, de-de")
+    parser.add_argument(
+        "--ddg-region", "--dr", default=defaults.ddg_region, help="DDGS region hint, e.g. us-en, uk-en, de-de"
+    )
     parser.add_argument(
         "--ddg-safesearch",
+        "--dss",
         default=defaults.ddg_safesearch,
         choices=["off", "moderate", "strict"],
         help="DDGS safesearch level",
     )
     parser.add_argument(
         "--ddg-backend",
+        "--db",
         default=defaults.ddg_backend,
         help=(
             "Comma-separated DDGS backends. Use 'auto' for provider mix or pick engines like duckduckgo, bing, brave."
         ),
     )
     parser.add_argument(
-        "--search-max-results", type=int, default=defaults.search_max_results, help="Max results to fetch per query"
+        "--search-max-results",
+        "--smr",
+        type=int,
+        default=defaults.search_max_results,
+        help="Max results to fetch per query",
     )
     parser.add_argument(
-        "--search-retries", type=int, default=defaults.search_retries, help="Retry attempts for transient search errors"
+        "--search-retries",
+        "--sr",
+        type=int,
+        default=defaults.search_retries,
+        help="Retry attempts for transient search errors",
     )
-    parser.add_argument("--log-level", default=defaults.log_level, help="Logging level: DEBUG, INFO, WARNING, ERROR")
-    parser.add_argument("--log-file", default=defaults.log_file, help="Optional log file path")
+    parser.add_argument(
+        "--log-level", "--ll", default=defaults.log_level, help="Logging level: DEBUG, INFO, WARNING, ERROR"
+    )
+    parser.add_argument("--log-file", "--lf", default=defaults.log_file, help="Optional log file path")
     parser.add_argument(
         "--log-console",
+        "--lc",
         action=argparse.BooleanOptionalAction,
         default=defaults.log_console,
         help="Enable console logging (pass --no-log-console to silence log statements on stderr)",
     )
-    parser.add_argument("--question", default=defaults.question, help="Run once with this question and exit")
+    parser.add_argument("--question", "--q", default=defaults.question, help="Run once with this question and exit")
     parser.add_argument(
         "--embedding-model",
+        "--em",
         default=defaults.embedding_model,
         help="Ollama embedding model to power topic similarity checks",
     )
     parser.add_argument(
         "--embedding-similarity-threshold",
+        "--est",
         type=float,
         default=defaults.embedding_similarity_threshold,
         help="Minimum cosine similarity to consider a topic without keyword overlap",
     )
     parser.add_argument(
         "--embedding-history-decay",
+        "--ehd",
         type=float,
         default=defaults.embedding_history_decay,
         help="Weight [0-1) that keeps prior topic embeddings when blending in new turns",
     )
     parser.add_argument(
         "--embedding-result-similarity-threshold",
+        "--erst",
         type=float,
         default=defaults.embedding_result_similarity_threshold,
         help="Semantic similarity needed for search results to skip the LLM relevance gate",
     )
     parser.add_argument(
         "--embedding-query-similarity-threshold",
+        "--eqst",
         type=float,
         default=defaults.embedding_query_similarity_threshold,
         help="Semantic similarity needed before a planned query is sent to the LLM filter",
