@@ -33,3 +33,17 @@ def test_pick_seed_query_skips_banned_entries() -> None:
 
     empty_seed = "none"
     assert H._pick_seed_query(empty_seed, fallback) == fallback
+
+
+def test_summarize_answer_uses_first_sentences() -> None:
+    text = "Sentence one explains the topic. Sentence two adds nuance. Sentence three is extra."
+    summary = H._summarize_answer(text, max_chars=120)
+    assert "Sentence one" in summary and "Sentence two" in summary
+
+
+def test_topic_brief_includes_summary_and_keywords() -> None:
+    topic = H.Topic(keywords={"renewable", "policy", "tax"})
+    topic.summary = "Key findings on renewable incentives in 2024."
+    brief = H._topic_brief(topic, max_keywords=2)
+    assert "Summary" in brief and "Keywords" in brief
+    assert "renewable" in brief
