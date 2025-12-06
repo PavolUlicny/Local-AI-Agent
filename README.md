@@ -67,7 +67,7 @@ Design goals:
 High‑level components and their roles:
 
 | Component | Role |
-|-----------|------|
+| ----------- | ------ |
 | Prompts (`prompts.py`) | Structured templates for each decision/action stage. |
 | Robot LLM (low temp) | Deterministic classifiers & planners (search decision, relevance, query planning). |
 | Assistant LLM (higher temp) | Final natural‑language answer synthesis. |
@@ -205,7 +205,7 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 ## CLI Arguments
 
 | Flag | Short | Default | Description |
-|------|-------|---------|-------------|
+| ------ | ------- | --------- | ------------- |
 | `--model` | `--m` | `cogito:8b` | Ollama model name/tag. |
 | `--no-auto-search` | `--nas` | off | Force NO_SEARCH unless logic changed manually. |
 | `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds (seed + planned). |
@@ -306,7 +306,7 @@ Notes:
 
 - More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
 - Python: tested with Python 3.12 (CI). Earlier 3.10–3.11 may work but are not CI-tested.
-- OS: Linux and macOS are expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
+- OS: Linux is expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
 - If running CPU‑only, ensure fast SSD swap; avoid paging spikes by lowering `--num-predict` if memory pressure appears.
 - Smaller GPUs (≤4 GB VRAM) can still run but may force model quantization or offload; keep expectations modest.
 - If you have <20 GB combined memory, choose a smaller or more aggressively quantized model and lower `--num-ctx` (see [Using Different Models](#using-different-models)).
@@ -380,113 +380,87 @@ Notes:
 
 ## Quick Start Examples
 
-If you've closed your terminals since installing the project, do this first:
+### 1. Start services and activate the virtualenv
 
-- In one terminal:
+1. Start the Ollama server in one terminal:
 
-```bash
-ollama serve
-```
+   ```bash
+   ollama serve
+   ```
 
-- In another terminal:
+2. In a second terminal, activate the project environment:
 
-Linux:
+   - **Linux**
 
-```bash
-cd Local-AI-Agent
-source .venv/bin/activate
-```
+     ```bash
+     cd Local-AI-Agent
+     source .venv/bin/activate
+     ```
 
-Windows:
+   - **Windows (PowerShell)**
 
-```bash
-cd Local-AI-Agent
-.\.venv\Scripts\activate
-```
+     ```powershell
+     cd Local-AI-Agent
+     .\.venv\Scripts\activate
+     ```
 
-Then continue with the quick start commands in the second terminal.
+Keep this terminal open for the commands below.
 
-Interactive session:
+### 2. Everyday commands
 
-- Linux:
+#### Interactive session
 
-```bash
-python3 -m src.main
-```
+- Linux: `python3 -m src.main`
+- Windows: `python -m src.main`
 
-Ask a single question and exit:
+#### Ask one question and exit
 
-```bash
-python3 -m src.main --question "Explain the difference between variance and standard deviation"
-```
+- Linux: `python3 -m src.main --question "Explain the difference between variance and standard deviation"`
+- Windows: `python -m src.main --question "Explain the difference between variance and standard deviation"`
 
-Force reasoning without searches:
+#### Force reasoning without searches
 
-```bash
-python3 -m src.main --no-auto-search --question "Derive the quadratic formula"
-```
+- Linux: `python3 -m src.main --no-auto-search --question "Derive the quadratic formula"`
+- Windows: `python -m src.main --no-auto-search --question "Derive the quadratic formula"`
 
-Increase search aggressiveness:
+#### Increase search aggressiveness
 
-```bash
-python3 -m src.main --max-rounds 20 --search-max-results 8
-```
-
-- Windows:
-
-```bash
-python -m src.main
-```
-
-Ask a single question and exit:
-
-```bash
-python -m src.main --question "Explain the difference between variance and standard deviation"
-```
-
-Force reasoning without searches:
-
-```bash
-python -m src.main --no-auto-search --question "Derive the quadratic formula"
-```
-
-Increase search aggressiveness:
-
-```bash
-python -m src.main --max-rounds 20 --search-max-results 8
-```
+- Linux: `python3 -m src.main --max-rounds 20 --search-max-results 8`
+- Windows: `python -m src.main --max-rounds 20 --search-max-results 8`
 
 ## Using the Makefile
 
-These shortcuts mirror the CLI and help standardize local runs. All commands assume bash and a local `.venv`.
+These shortcuts mirror the CLI and help standardize local runs. Pick whichever workflow matches your shell.
 
-- Windows:
+### If you are not using GNU Make (PowerShell/CMD)
 
-Windows does not ship with GNU Make or a POSIX shell. Install them via Git for Windows (Git Bash), MSYS2, WSL, or `choco install make` if you want to run the targets verbatim.
-If you prefer to stay in PowerShell/CMD, run the underlying Python commands directly:
+Windows does not ship with GNU Make or a POSIX shell. You can either install it (Git Bash, MSYS2, WSL, or `choco install make`) or simply run the underlying Python commands:
 
 ```powershell
-# Equivalent to `make run`
+# make run
 python -m src.main
 
-# Equivalent to `make ask QUESTION="What is 2+2?"`
+# make ask
 python -m src.main --question "What is 2+2?"
 
-# Equivalent to `make run-no-search`
+# make run-no-search
 python -m src.main --no-auto-search --question "Derive the quadratic formula"
 
-# Equivalent to `make run-search`
-python -m src.main --max-rounds 1 --search-max-results 2 --ddg-backend duckduckgo --log-level INFO
+# make run-search
+python -m src.main --question "Capital of France?" --max-rounds 1 --search-max-results 2 --ddg-backend duckduckgo --log-level INFO
 
-# Equivalent to `make check`
+# make check
+python -c "from src.config import AgentConfig; from src.agent import Agent; Agent(AgentConfig(no_auto_search=True, question='healthcheck')); print('OK')"
+
+# make smoke
 python -m scripts.smoke
 ```
 
-Reuse the Quick Start / Development sections for Windows-specific venv activation (`.\.venv\Scripts\activate`) and installation steps before running these commands.
+Activate the virtual environment beforehand (`.\.venv\Scripts\activate`) just like in the Quick Start and Development sections.
 
-- Linux (or Windows if `Make` is installed):
+### With GNU Make (Linux or Windows + Git Bash/MSYS2/WSL)
 
-`Make` package needed to run these commands.
+Install `make` if it is not already available. Then run:
 
 ```bash
 # One-time setup: create venv, install deps, pull default model
@@ -607,15 +581,15 @@ Locally, you can emulate this with the commands in the Development section.
 ## Troubleshooting
 
 | Symptom | Cause | Action |
-|---------|-------|--------|
+| --------- | ------- | -------- |
 | `Model 'xyz' not found` | Ollama model not pulled | `ollama pull xyz` then retry. |
 | Frequent context rebuild logs | Oversized conversation or results | Reduce `--max-rounds`, `--max-context-turns`, or initial token settings. |
 | Many rate limit warnings | DDGS provider throttling | Lower concurrency (accept defaults) or narrow `--ddg-backend` to a single engine like `duckduckgo`. |
 | Empty search results | Provider mix mismatch | Retry with a specific backend (`--ddg-backend duckduckgo`/`bing`) or broaden query phrasing. |
 | No new suggestions | Planning chain conservative or truncation | Increase `--max-followup-suggestions` or verify not hitting truncation caps. |
-| `ModuleNotFoundError: No module named 'langchain_community'` | Wrong Python interpreter or deps not installed | Activate the venv and reinstall: Linux: `source .venv/bin/activate && pip install -r requirements.txt`. Run via `python3 -m src.main`. Windows: `.\.venv\Scripts\activate && pip install -r requirements.txt`. Run via `python -m src.main`.|
+| `ModuleNotFoundError: No module named 'langchain_community'` | Wrong Python interpreter or deps not installed | Activate the venv and reinstall: Linux: `source .venv/bin/activate && pip install -r requirements.txt`. Run via `python3 -m src.main`. Windows: `.\.venv\Scripts\activate && pip install -r requirements.txt`. Run via `python -m src.main`. |
 | `pre-commit` alters files locally | Hooks include auto-fixers (ruff). Re-run `git add` after fixes. | Use `pre-commit run --all-files --show-diff-on-failure` in CI modes. |
-| `--log-file` path with spaces fails | Makefile quoting added, but direct CLI still needs quotes | Use `--log-file "/path/with spaces/agent.log"` |
+| `--log-file` path with spaces fails | Makefile quoting added, but direct CLI still needs quotes | Use `--log-file "/path/with spaces/agent.log"`. |
 
 ## Security & Safety Notes
 
