@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import math
 import re
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse, urlunparse
 
 # Regex/tokenization and stopwords
@@ -214,6 +215,7 @@ class Topic:
     keywords: Set[str] = field(default_factory=set)
     turns: TopicTurns = field(default_factory=list)
     summary: str = ""
+    embedding: List[float] | None = None
 
 
 def _extract_keywords(text: str) -> Set[str]:
@@ -263,6 +265,41 @@ def _topic_brief(topic: Topic, max_keywords: int = 10) -> str:
     return "\n".join(parts).strip()
 
 
+def _cosine_similarity(vec_a: Sequence[float] | None, vec_b: Sequence[float] | None) -> float:
+    if not vec_a or not vec_b:
+        return 0.0
+    length = min(len(vec_a), len(vec_b))
+    if length == 0:
+        return 0.0
+    dot = sum(vec_a[i] * vec_b[i] for i in range(length))
+    norm_a = math.sqrt(sum(vec_a[i] ** 2 for i in range(length)))
+    norm_b = math.sqrt(sum(vec_b[i] ** 2 for i in range(length)))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    similarity = dot / (norm_a * norm_b)
+    # Clamp to guard against tiny floating point drift outside [-1, 1]
+    return max(-1.0, min(1.0, similarity))
+
+
+def _blend_embeddings(
+    existing: Optional[List[float]],
+    new: Sequence[float],
+    decay: float,
+) -> List[float]:
+    if not new:
+        return list(existing or [])
+    decay_clamped = min(max(decay, 0.0), 0.9999)
+    new_weight = 1.0 - decay_clamped
+    prev = list(existing or [])
+    size = max(len(prev), len(new))
+    blended: List[float] = []
+    for idx in range(size):
+        prev_val = prev[idx] if idx < len(prev) else 0.0
+        new_val = new[idx] if idx < len(new) else 0.0
+        blended.append(prev_val * decay_clamped + new_val * new_weight)
+    return blended
+
+
 def _collect_prior_responses(
     topic: Topic,
     limit: int = 3,
@@ -293,21 +330,29 @@ def _select_topic(
     current_year: str,
     current_month: str,
     current_day: str,
+    question_embedding: Sequence[float] | None = None,
+    embedding_threshold: float = 0.35,
 ) -> Tuple[Optional[int], TopicTurns, Set[str]]:
     if not topics:
         return None, [], set(base_keywords)
 
-    scored = sorted(
-        ((len(topic.keywords.intersection(base_keywords)), idx) for idx, topic in enumerate(topics)),
-        key=lambda x: (-x[0], x[1]),
-    )
-    top_candidates = [item for item in scored if item[0] > 0][:3]
+    candidates: List[Tuple[int, float, int]] = []
+    for idx, topic in enumerate(topics):
+        overlap = len(topic.keywords.intersection(base_keywords))
+        similarity = 0.0
+        if question_embedding and topic.embedding:
+            similarity = _cosine_similarity(question_embedding, topic.embedding)
+        if overlap > 0 or similarity >= embedding_threshold:
+            candidates.append((overlap, similarity, idx))
+
+    candidates.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    top_candidates = candidates[:3]
 
     if not top_candidates:
         return None, [], set(base_keywords)
 
     decisions: List[Tuple[str, int, TopicTurns]] = []
-    for _, idx in top_candidates:
+    for _, _, idx in top_candidates:
         topic = topics[idx]
         recent_turns = _tail_turns(topic.turns, max_context_turns)
         recent_text = _format_turns(recent_turns, "No prior conversation.")

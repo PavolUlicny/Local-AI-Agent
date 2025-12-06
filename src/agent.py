@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from ddgs import DDGS
 from ddgs.exceptions import DDGSException, TimeoutException
+from langchain_ollama import OllamaEmbeddings
 
 PromptSession: Any | None
 ANSI: Any | None
@@ -73,6 +74,8 @@ _prune_keywords = _helpers._prune_keywords
 _canonicalize_url = _helpers._canonicalize_url
 _summarize_answer = _helpers._summarize_answer
 _topic_brief = _helpers._topic_brief
+_blend_embeddings = _helpers._blend_embeddings
+_cosine_similarity = _helpers._cosine_similarity
 _PATTERN_SEARCH_DECISION = _helpers._PATTERN_SEARCH_DECISION
 _PATTERN_YES_NO = _helpers._PATTERN_YES_NO
 MAX_CONVERSATION_CHARS = _helpers.MAX_CONVERSATION_CHARS
@@ -100,6 +103,7 @@ class Agent:
         }
         self.topics: List["Topic"] = []
         self._prompt_session = None
+        self._embedding_client: OllamaEmbeddings | None = None
 
     def _print_welcome_banner(self) -> None:
         message = "\n".join(
@@ -228,6 +232,52 @@ class Agent:
             self._prompt_session = self._build_prompt_session()
         return self._prompt_session
 
+    def _ensure_embedding_client(self) -> OllamaEmbeddings | None:
+        if not self.cfg.embedding_model:
+            return None
+        if self._embedding_client is None:
+            try:
+                self._embedding_client = OllamaEmbeddings(model=self.cfg.embedding_model)
+            except Exception as exc:
+                logging.warning("Unable to initialize embedding model '%s': %s", self.cfg.embedding_model, exc)
+                self._embedding_client = None
+        return self._embedding_client
+
+    def _embed_text(self, text: str) -> List[float] | None:
+        normalized = (text or "").strip()
+        if not normalized:
+            return None
+        client = self._ensure_embedding_client()
+        if client is None:
+            return None
+        try:
+            return list(client.embed_query(normalized))
+        except Exception as exc:  # pragma: no cover - network/model specific
+            if "not found" in str(exc).lower():
+                logging.warning(
+                    "Embedding model '%s' not found. Run 'ollama pull %s' to enable semantic topic tracking.",
+                    self.cfg.embedding_model,
+                    self.cfg.embedding_model,
+                )
+            else:
+                logging.warning("Embedding generation failed (%s): %s", self.cfg.embedding_model, exc)
+            return None
+
+    @staticmethod
+    def _context_similarity(
+        candidate_embedding: List[float] | None,
+        question_embedding: List[float] | None,
+        topic_embedding: List[float] | None,
+    ) -> float:
+        if not candidate_embedding:
+            return 0.0
+        scores: List[float] = []
+        if question_embedding:
+            scores.append(_cosine_similarity(candidate_embedding, question_embedding))
+        if topic_embedding:
+            scores.append(_cosine_similarity(candidate_embedding, topic_embedding))
+        return max(scores) if scores else 0.0
+
     def _read_user_query(self) -> str:
         formatted_prompt, _ = self._prompt_messages()
         session = self._ensure_prompt_session()
@@ -260,6 +310,7 @@ class Agent:
         current_month = f"{dt_obj.month:02d}"
         current_day = f"{dt_obj.day:02d}"
         question_keywords = _extract_keywords(user_query)
+        question_embedding = self._embed_text(user_query)
         try:
             selected_topic_index, recent_history, topic_keywords = _select_topic(
                 self.chains["context"],
@@ -271,6 +322,8 @@ class Agent:
                 current_year,
                 current_month,
                 current_day,
+                question_embedding=question_embedding,
+                embedding_threshold=cfg.embedding_similarity_threshold,
             )
         except ResponseError as exc:  # model not found, etc.
             message = str(exc)
@@ -289,6 +342,9 @@ class Agent:
         topic_brief_text = ""
         if selected_topic_index is not None and selected_topic_index < len(self.topics):
             topic_brief_text = _topic_brief(self.topics[selected_topic_index])
+        topic_embedding_current: List[float] | None = None
+        if selected_topic_index is not None and selected_topic_index < len(self.topics):
+            topic_embedding_current = self.topics[selected_topic_index].embedding
         recent_for_prompt = _tail_turns(recent_history, MAX_PROMPT_RECENT_TURNS)
         conversation_text = _format_turns(recent_for_prompt, "No prior relevant conversation.")
         if topic_brief_text:
@@ -443,86 +499,97 @@ class Agent:
                     normalized_result = result_text.strip()
                     if normalized_result and normalized_result in seen_results:
                         continue
+                    keywords_source = " ".join([part for part in [title, snippet] if part])
                     relevant = _is_relevant(result_text, topic_keywords)
                     if not relevant:
-                        if relevance_llm_checks >= cfg.max_relevance_llm_checks:
-                            continue
-                        kw_list = sorted(topic_keywords) if topic_keywords else []
-                        if len(kw_list) > 50:
-                            kw_list = kw_list[:50]
-                        topic_keywords_text = ", ".join(kw_list) if kw_list else "None"
-                        topic_keywords_text = _truncate_text(topic_keywords_text, 1000)
-                        try:
-                            relevance_raw = self.chains["result_filter"].invoke(
-                                self._inputs(
-                                    current_datetime,
-                                    current_year,
-                                    current_month,
-                                    current_day,
-                                    conversation_text,
-                                    user_query,
-                                    search_query=current_query,
-                                    raw_result=result_text,
-                                    known_answers=prior_responses_text,
-                                    topic_keywords=topic_keywords_text,
+                        result_embedding = self._embed_text(keywords_source)
+                        similarity = self._context_similarity(
+                            result_embedding,
+                            question_embedding,
+                            topic_embedding_current,
+                        )
+                        if similarity >= cfg.embedding_result_similarity_threshold:
+                            relevant = True
+                        if not relevant:
+                            if relevance_llm_checks >= cfg.max_relevance_llm_checks:
+                                continue
+                            kw_list = sorted(topic_keywords) if topic_keywords else []
+                            if len(kw_list) > 50:
+                                kw_list = kw_list[:50]
+                            topic_keywords_text = ", ".join(kw_list) if kw_list else "None"
+                            topic_keywords_text = _truncate_text(topic_keywords_text, 1000)
+                            try:
+                                relevance_raw = self.chains["result_filter"].invoke(
+                                    self._inputs(
+                                        current_datetime,
+                                        current_year,
+                                        current_month,
+                                        current_day,
+                                        conversation_text,
+                                        user_query,
+                                        search_query=current_query,
+                                        raw_result=result_text,
+                                        known_answers=prior_responses_text,
+                                        topic_keywords=topic_keywords_text,
+                                    )
                                 )
-                            )
-                            relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
-                            relevance_llm_checks += 1
-                        except ResponseError as exc:
-                            if "not found" in str(exc).lower():
-                                logging.error(
-                                    f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                                )
-                                return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
-                            if _is_context_length_error(str(exc)):
-                                if self.rebuild_counts["relevance"] < MAX_REBUILD_RETRIES:
-                                    self._reduce_context_and_rebuild("relevance", "relevance")
-                                    try:
-                                        relevance_raw = self.chains["result_filter"].invoke(
-                                            self._inputs(
-                                                current_datetime,
-                                                current_year,
-                                                current_month,
-                                                current_day,
-                                                conversation_text,
-                                                user_query,
-                                                search_query=current_query,
-                                                raw_result=result_text,
-                                                known_answers=prior_responses_text,
-                                                topic_keywords=topic_keywords_text,
+                                relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
+                                relevance_llm_checks += 1
+                            except ResponseError as exc:
+                                if "not found" in str(exc).lower():
+                                    logging.error(
+                                        f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                                    )
+                                    return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                                if _is_context_length_error(str(exc)):
+                                    if self.rebuild_counts["relevance"] < MAX_REBUILD_RETRIES:
+                                        self._reduce_context_and_rebuild("relevance", "relevance")
+                                        try:
+                                            relevance_raw = self.chains["result_filter"].invoke(
+                                                self._inputs(
+                                                    current_datetime,
+                                                    current_year,
+                                                    current_month,
+                                                    current_day,
+                                                    conversation_text,
+                                                    user_query,
+                                                    search_query=current_query,
+                                                    raw_result=result_text,
+                                                    known_answers=prior_responses_text,
+                                                    topic_keywords=topic_keywords_text,
+                                                )
                                             )
-                                        )
-                                        relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
-                                        relevance_llm_checks += 1
-                                    except ResponseError:
-                                        logging.info(
-                                            f"Relevance retry failed; skipping one result for '{current_query}'."
-                                        )
+                                            relevance_decision = _regex_validate(
+                                                str(relevance_raw), _PATTERN_YES_NO, "NO"
+                                            )
+                                            relevance_llm_checks += 1
+                                        except ResponseError:
+                                            logging.info(
+                                                f"Relevance retry failed; skipping one result for '{current_query}'."
+                                            )
+                                            relevance_decision = "NO"
+                                    else:
+                                        logging.info("Reached relevance rebuild cap; marking result as low relevance.")
                                         relevance_decision = "NO"
                                 else:
-                                    logging.info("Reached relevance rebuild cap; marking result as low relevance.")
+                                    logging.info(
+                                        f"Relevance check failed; skipping one result for '{current_query}'. Error: {exc}"
+                                    )
                                     relevance_decision = "NO"
-                            else:
+                            except Exception as exc:
                                 logging.info(
-                                    f"Relevance check failed; skipping one result for '{current_query}'. Error: {exc}"
+                                    f"Relevance check crashed; skipping one result for '{current_query}'. Error: {exc}"
                                 )
                                 relevance_decision = "NO"
-                        except Exception as exc:
-                            logging.info(
-                                f"Relevance check crashed; skipping one result for '{current_query}'. Error: {exc}"
-                            )
-                            relevance_decision = "NO"
-                        if relevance_decision == "YES":
-                            relevant = True
-                        else:
-                            continue
+                            if relevance_decision == "YES":
+                                relevant = True
+                            else:
+                                continue
                     aggregated_results.append(result_text)
                     seen_results.add(normalized_result)
                     seen_result_hashes.add(result_hash)
                     if norm_link:
                         seen_urls.add(norm_link)
-                    keywords_source = " ".join([part for part in [title, snippet] if part])
                     topic_keywords.update(_extract_keywords(keywords_source))
                     accepted_any = True
                 if not accepted_any:
@@ -601,6 +668,20 @@ class Agent:
                     norm_candidate = _normalize_query(candidate)
                     if norm_candidate in seen_query_norms or len(pending_queries) >= max_rounds:
                         continue
+                    candidate_embedding = self._embed_text(candidate)
+                    if candidate_embedding is not None and (question_embedding or topic_embedding_current):
+                        similarity = self._context_similarity(
+                            candidate_embedding,
+                            question_embedding,
+                            topic_embedding_current,
+                        )
+                        if similarity < cfg.embedding_query_similarity_threshold:
+                            logging.info(
+                                "Skipping suggestion with low semantic similarity (%.2f): %s",
+                                similarity,
+                                candidate,
+                            )
+                            continue
                     try:
                         verdict_raw = self.chains["query_filter"].invoke(
                             self._inputs(
@@ -721,6 +802,20 @@ class Agent:
                         norm_candidate = _normalize_query(candidate)
                         if norm_candidate in seen_query_norms or len(pending_queries) >= max_rounds:
                             continue
+                        candidate_embedding = self._embed_text(candidate)
+                        if candidate_embedding is not None and (question_embedding or topic_embedding_current):
+                            similarity = self._context_similarity(
+                                candidate_embedding,
+                                question_embedding,
+                                topic_embedding_current,
+                            )
+                            if similarity < cfg.embedding_query_similarity_threshold:
+                                logging.info(
+                                    "Skipping fill suggestion with low semantic similarity (%.2f): %s",
+                                    similarity,
+                                    candidate,
+                                )
+                                continue
                         try:
                             verdict_raw = self.chains["query_filter"].invoke(
                                 self._inputs(
@@ -849,7 +944,8 @@ class Agent:
             print()
         response_text = "".join(response_chunks)
         if selected_topic_index is None:
-            self.topics.append(_Topic(keywords=set(topic_keywords)))
+            initial_embedding = list(question_embedding) if question_embedding else None
+            self.topics.append(_Topic(keywords=set(topic_keywords), embedding=initial_embedding))
             selected_topic_index = len(self.topics) - 1
         if selected_topic_index != len(self.topics) - 1:
             moved_topic = self.topics.pop(selected_topic_index)
@@ -872,6 +968,13 @@ class Agent:
         new_summary = _summarize_answer(response_text)
         if new_summary:
             topic_entry.summary = new_summary
+        turn_embedding = self._embed_text(f"User: {user_query}\nAssistant: {response_text}")
+        if turn_embedding:
+            topic_entry.embedding = _blend_embeddings(
+                topic_entry.embedding,
+                turn_embedding,
+                cfg.embedding_history_decay,
+            )
         _prune_keywords(topic_entry)
         return response_text
 

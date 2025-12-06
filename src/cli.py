@@ -98,6 +98,35 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-level", default=defaults.log_level, help="Logging level: DEBUG, INFO, WARNING, ERROR")
     parser.add_argument("--log-file", default=defaults.log_file, help="Optional log file path")
     parser.add_argument("--question", default=defaults.question, help="Run once with this question and exit")
+    parser.add_argument(
+        "--embedding-model",
+        default=defaults.embedding_model,
+        help="Ollama embedding model to power topic similarity checks",
+    )
+    parser.add_argument(
+        "--embedding-similarity-threshold",
+        type=float,
+        default=defaults.embedding_similarity_threshold,
+        help="Minimum cosine similarity to consider a topic without keyword overlap",
+    )
+    parser.add_argument(
+        "--embedding-history-decay",
+        type=float,
+        default=defaults.embedding_history_decay,
+        help="Weight [0-1) that keeps prior topic embeddings when blending in new turns",
+    )
+    parser.add_argument(
+        "--embedding-result-similarity-threshold",
+        type=float,
+        default=defaults.embedding_result_similarity_threshold,
+        help="Semantic similarity needed for search results to skip the LLM relevance gate",
+    )
+    parser.add_argument(
+        "--embedding-query-similarity-threshold",
+        type=float,
+        default=defaults.embedding_query_similarity_threshold,
+        help="Semantic similarity needed before a planned query is sent to the LLM filter",
+    )
     return parser
 
 

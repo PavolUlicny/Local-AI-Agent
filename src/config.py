@@ -30,6 +30,11 @@ class AgentConfig:
     log_level: str = "WARNING"
     log_file: str | None = None
     question: str | None = None
+    embedding_model: str = "embeddinggemma:300m"
+    embedding_similarity_threshold: float = 0.35
+    embedding_history_decay: float = 0.65
+    embedding_result_similarity_threshold: float = 0.5
+    embedding_query_similarity_threshold: float = 0.3
 
     @property
     def auto_search_decision(self) -> bool:
