@@ -40,12 +40,12 @@ jobs:
       - name: Ruff lint
         run: |
           ruff --version
-          ruff check src scripts
+          ruff check src tests scripts
 
       - name: MyPy type check
         run: |
           mypy --version
-          mypy src
+          mypy src tests
 
       - name: Run smoke test (no network calls)
         run: |
