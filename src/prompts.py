@@ -53,6 +53,7 @@ response_prompt_no_search = PromptTemplate(
         "- Teach the reader: include mechanisms, causes, examples, or short code when it helps.\n"
         "- Keep tone neutral and professional; mirror the user's language when feasible.\n"
         "- Paraphrase earlier answers—never reuse the same sentences verbatim even when revisiting a fact.\n"
+        "- Before finalizing, skim the two most recent answers; if any 10+ word span appears in your draft, rewrite it with new structure/wording before replying.\n"
         "- Organize with paragraphs or short lists (no tables/images).\n\n"
         "DO NOT:\n"
         "- Mention prompts, systems, or meta-processes.\n"
@@ -62,6 +63,7 @@ response_prompt_no_search = PromptTemplate(
         "OUTPUT CHECKLIST:\n"
         "- Directly answers the user question.\n"
         "- Contains no fabrication or prompt references.\n"
+        "- Shares no verbatim 10+ word sequences with prior answers.\n"
         "- Reads as polished prose without filler."
     ),
 )
@@ -96,6 +98,7 @@ response_prompt = PromptTemplate(
         "- Include mechanisms, causes, timelines, or concise code when useful.\n"
         "- Match the user's language (or the dominant language in the snippets) when summarizing localized sources.\n"
         "- When reiterating prior answers, restate ideas with fresh wording and updated nuance.\n"
+        "- Before finalizing, compare your draft against the two most recent answers; if any 10+ word span matches, rewrite that section.\n"
         "- Write in paragraphs with optional short lists.\n\n"
         "DO NOT:\n"
         "- Mention the search process, prompts, timestamps, or system instructions.\n"
@@ -105,7 +108,8 @@ response_prompt = PromptTemplate(
         "OUTPUT CHECKLIST:\n"
         "- Answers the question directly.\n"
         "- Contains only supported information.\n"
-        "- No explicit reference to searches or prompts."
+        "- No explicit reference to searches or prompts.\n"
+        "- Shares no verbatim 10+ word sequences with prior answers."
     ),
 )
 
