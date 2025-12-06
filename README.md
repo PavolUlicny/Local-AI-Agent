@@ -462,8 +462,8 @@ These shortcuts mirror the CLI and help standardize local runs. All commands ass
 
 - Windows:
 
-- Windows does not ship with GNU Make or a POSIX shell. Install them via Git for Windows (Git Bash), MSYS2, WSL, or `choco install make` if you want to run the targets verbatim.
-- If you prefer to stay in PowerShell/CMD, run the underlying Python commands directly:
+Windows does not ship with GNU Make or a POSIX shell. Install them via Git for Windows (Git Bash), MSYS2, WSL, or `choco install make` if you want to run the targets verbatim.
+If you prefer to stay in PowerShell/CMD, run the underlying Python commands directly:
 
 ```powershell
 # Equivalent to `make run`
