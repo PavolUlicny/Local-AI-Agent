@@ -64,6 +64,8 @@ MAX_TURN_KEYWORD_SOURCE_CHARS = 17500
 MAX_TOPICS = 20
 MAX_TOPIC_KEYWORDS = 150
 MAX_REBUILD_RETRIES = 2
+MAX_PROMPT_RECENT_TURNS = 4
+MAX_TOPIC_SUMMARY_CHARS = 400
 
 
 def _truncate_result(text: str, max_chars: int = MAX_SINGLE_RESULT_CHARS) -> str:
@@ -211,6 +213,7 @@ def _tail_turns(turns: TopicTurns, limit: int) -> TopicTurns:
 class Topic:
     keywords: Set[str] = field(default_factory=set)
     turns: TopicTurns = field(default_factory=list)
+    summary: str = ""
 
 
 def _extract_keywords(text: str) -> Set[str]:
@@ -239,6 +242,25 @@ def _format_turns(turns: TopicTurns, fallback: str) -> str:
     if not turns:
         return fallback
     return "\n\n".join(f"User: {user}\nAssistant: {assistant}" for user, assistant in turns)
+
+
+def _summarize_answer(text: str, max_chars: int = MAX_TOPIC_SUMMARY_CHARS) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    summary = " ".join(sentences[:2]).strip() or cleaned
+    return _truncate_text(summary, max_chars)
+
+
+def _topic_brief(topic: Topic, max_keywords: int = 10) -> str:
+    parts: List[str] = []
+    if topic.summary:
+        parts.append(f"Summary: {topic.summary}")
+    if topic.keywords:
+        keywords = ", ".join(sorted(topic.keywords)[:max_keywords])
+        parts.append(f"Keywords: {keywords}")
+    return "\n".join(parts).strip()
 
 
 def _collect_prior_responses(
@@ -288,10 +310,14 @@ def _select_topic(
     for _, idx in top_candidates:
         topic = topics[idx]
         recent_turns = _tail_turns(topic.turns, max_context_turns)
+        recent_text = _format_turns(recent_turns, "No prior conversation.")
+        topic_brief = _topic_brief(topic)
+        if topic_brief:
+            recent_text = f"Topic brief:\n{topic_brief}\n\nRecent turns:\n{recent_text}"
         try:
             decision_raw = context_chain.invoke(
                 {
-                    "recent_conversation": _format_turns(recent_turns, "No prior conversation."),
+                    "recent_conversation": recent_text,
                     "new_question": question,
                     "current_datetime": current_datetime,
                     "current_year": current_year,

@@ -56,6 +56,7 @@ except Exception:  # pragma: no cover - local dev fallback
     _helpers = importlib.import_module("helpers")
 
 _Topic = _helpers.Topic
+_tail_turns = _helpers._tail_turns
 _truncate_result = _helpers._truncate_result
 _normalize_query = _helpers._normalize_query
 _regex_validate = _helpers._regex_validate
@@ -70,6 +71,8 @@ _collect_prior_responses = _helpers._collect_prior_responses
 _select_topic = _helpers._select_topic
 _prune_keywords = _helpers._prune_keywords
 _canonicalize_url = _helpers._canonicalize_url
+_summarize_answer = _helpers._summarize_answer
+_topic_brief = _helpers._topic_brief
 _PATTERN_SEARCH_DECISION = _helpers._PATTERN_SEARCH_DECISION
 _PATTERN_YES_NO = _helpers._PATTERN_YES_NO
 MAX_CONVERSATION_CHARS = _helpers.MAX_CONVERSATION_CHARS
@@ -78,6 +81,7 @@ MAX_SEARCH_RESULTS_CHARS = _helpers.MAX_SEARCH_RESULTS_CHARS
 MAX_TURN_KEYWORD_SOURCE_CHARS = _helpers.MAX_TURN_KEYWORD_SOURCE_CHARS
 MAX_TOPICS = _helpers.MAX_TOPICS
 MAX_REBUILD_RETRIES = _helpers.MAX_REBUILD_RETRIES
+MAX_PROMPT_RECENT_TURNS = _helpers.MAX_PROMPT_RECENT_TURNS
 
 
 class Agent:
@@ -282,13 +286,21 @@ class Agent:
             recent_history = []
             topic_keywords = set(question_keywords)
 
-        conversation_text = _format_turns(recent_history, "No prior relevant conversation.")
+        topic_brief_text = ""
+        if selected_topic_index is not None and selected_topic_index < len(self.topics):
+            topic_brief_text = _topic_brief(self.topics[selected_topic_index])
+        recent_for_prompt = _tail_turns(recent_history, MAX_PROMPT_RECENT_TURNS)
+        conversation_text = _format_turns(recent_for_prompt, "No prior relevant conversation.")
+        if topic_brief_text:
+            conversation_text = f"Topic brief:\n{topic_brief_text}\n\nRecent turns:\n{conversation_text}"
         conversation_text = _truncate_text(conversation_text, MAX_CONVERSATION_CHARS)
         prior_responses_text = (
             _collect_prior_responses(self.topics[selected_topic_index], max_chars=MAX_PRIOR_RESPONSE_CHARS)
             if selected_topic_index is not None
             else "No prior answers for this topic."
         )
+        if topic_brief_text:
+            prior_responses_text = f"{topic_brief_text}\n\nRecent answers:\n{prior_responses_text}"
         prior_responses_text = _truncate_text(prior_responses_text, MAX_PRIOR_RESPONSE_CHARS)
 
         aggregated_results: List[str] = []
@@ -857,6 +869,9 @@ class Agent:
             turn_keywords = set(question_keywords)
         topic_entry.keywords.update(turn_keywords)
         topic_entry.keywords.update(topic_keywords)
+        new_summary = _summarize_answer(response_text)
+        if new_summary:
+            topic_entry.summary = new_summary
         _prune_keywords(topic_entry)
         return response_text
 
