@@ -30,6 +30,11 @@ SEARCH_RETRIES      ?=
 LOG_LEVEL           ?=
 LOG_FILE            ?=
 NO_AUTO_SEARCH      ?=
+EMBEDDING_MODEL     ?=
+EMBEDDING_SIMILARITY_THRESHOLD ?=
+EMBEDDING_HISTORY_DECAY ?=
+EMBEDDING_RESULT_SIMILARITY_THRESHOLD ?=
+EMBEDDING_QUERY_SIMILARITY_THRESHOLD ?=
 
 # Compose optional CLI args from provided Make variables
 EXTRA_ARGS :=
@@ -57,6 +62,11 @@ EXTRA_ARGS += $(if $(LOG_LEVEL), --log-level $(LOG_LEVEL))
 EXTRA_ARGS += $(if $(LOG_FILE), --log-file "$(LOG_FILE)")
 # Treat only common truthy values as enabling the flag; plain "0" or empty will not
 EXTRA_ARGS += $(if $(filter 1 true TRUE yes YES on ON,$(NO_AUTO_SEARCH)), --no-auto-search)
+EXTRA_ARGS += $(if $(EMBEDDING_MODEL), --embedding-model $(EMBEDDING_MODEL))
+EXTRA_ARGS += $(if $(EMBEDDING_SIMILARITY_THRESHOLD), --embedding-similarity-threshold $(EMBEDDING_SIMILARITY_THRESHOLD))
+EXTRA_ARGS += $(if $(EMBEDDING_HISTORY_DECAY), --embedding-history-decay $(EMBEDDING_HISTORY_DECAY))
+EXTRA_ARGS += $(if $(EMBEDDING_RESULT_SIMILARITY_THRESHOLD), --embedding-result-similarity-threshold $(EMBEDDING_RESULT_SIMILARITY_THRESHOLD))
+EXTRA_ARGS += $(if $(EMBEDDING_QUERY_SIMILARITY_THRESHOLD), --embedding-query-similarity-threshold $(EMBEDDING_QUERY_SIMILARITY_THRESHOLD))
 
 .PHONY: help venv install dev-setup pull-model serve-ollama run ask run-no-search run-search check-ollama check smoke clean
 
