@@ -242,9 +242,18 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 
 You can substitute any Ollama model for `cogito:8b` by pulling it first and adjusting runtime parameters:
 
+- Linux:
+
 ```bash
 ollama pull llama3:8b   # example
 python3 -m src.main --model llama3:8b
+```
+
+- Windows:
+
+```bash
+ollama pull llama3:8b
+python -m src.main --model llama3:8b
 ```
 
 Key adjustments when switching models:
@@ -307,7 +316,7 @@ Notes:
 
 This project requires the Ollama runtime. Follow these steps to install it:
 
-- Linux (example using the official install script):
+- Linux:
 
 ```bash
 # Download and run the official installer script
@@ -338,6 +347,8 @@ ollama serve
 
 In another terminal:
 
+- Linux:
+
 ```bash
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
@@ -345,8 +356,21 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
-ollama pull cogito:8b             # or your chosen chat model
-ollama pull embeddinggemma:300m   # default embedding model for topic/relevance memory
+ollama pull cogito:8b
+ollama pull embeddinggemma:300m
+```
+
+- Windows (tested only using Python 3.12):
+
+```bash
+git clone https://github.com/PavolUlicny/Local-AI-Agent.git
+cd Local-AI-Agent
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -U pip
+pip install -r requirements.txt
+ollama pull cogito:8b
+ollama pull embeddinggemma:300m
 ```
 
 Notes:
@@ -366,13 +390,25 @@ ollama serve
 
 - In another terminal:
 
+- Linux:
+
 ```bash
+cd Local-AI-Agent
 source .venv/bin/activate
+```
+
+- Windows:
+
+```bash
+cd Local-AI-Agent
+.\.venv\Scripts\activate
 ```
 
 Then continue with the quick start commands in the second terminal.
 
 Interactive session:
+
+- Linux:
 
 ```bash
 python3 -m src.main
@@ -396,9 +432,59 @@ Increase search aggressiveness:
 python3 -m src.main --max-rounds 20 --search-max-results 8
 ```
 
+- Windows:
+
+```bash
+python -m src.main
+```
+
+Ask a single question and exit:
+
+```bash
+python -m src.main --question "Explain the difference between variance and standard deviation"
+```
+
+Force reasoning without searches:
+
+```bash
+python -m src.main --no-auto-search --question "Derive the quadratic formula"
+```
+
+Increase search aggressiveness:
+
+```bash
+python -m src.main --max-rounds 20 --search-max-results 8
+```
+
 ## Using the Makefile
 
 These shortcuts mirror the CLI and help standardize local runs. All commands assume bash and a local `.venv`.
+
+Windows:
+
+- Windows does not ship with GNU Make or a POSIX shell. Install them via Git for Windows (Git Bash), MSYS2, WSL, or `choco install make` if you want to run the targets verbatim.
+- If you prefer to stay in PowerShell/CMD, run the underlying Python commands directly:
+
+```powershell
+# Equivalent to `make run`
+python -m src.main
+
+# Equivalent to `make ask QUESTION="What is 2+2?"`
+python -m src.main --question "What is 2+2?"
+
+# Equivalent to `make run-no-search`
+python -m src.main --no-auto-search --question "Derive the quadratic formula"
+
+# Equivalent to `make run-search`
+python -m src.main --max-rounds 1 --search-max-results 2 --ddg-backend duckduckgo --log-level INFO
+
+# Equivalent to `make check`
+python -m scripts.smoke
+```
+
+Reuse the Quick Start / Development sections for Windows-specific venv activation (`.\.venv\Scripts\activate`) and installation steps before running these commands.
+
+`Make` package needed to run these commands.
 
 ```bash
 # One-time setup: create venv, install deps, pull default model
@@ -461,8 +547,16 @@ mypy --config-file=pyproject.toml src tests
 
 - Smoke test (no network calls):
 
+- Linux:
+
 ```bash
 python3 -m scripts.smoke
+```
+
+- Windows:
+
+```bash
+python -m scripts.smoke
 ```
 
 - Pytest suite (helpers + mocked agent flow):
@@ -473,8 +567,16 @@ pytest
 
 - Run via module entrypoint (recommended):
 
+- Linux:
+
 ```bash
 python3 -m src.main --question "Hello"
+```
+
+- Windows:
+
+```bash
+python -m src.main --question "Hello"
 ```
 
 ## Continuous Integration (CI)
