@@ -230,6 +230,7 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 | `--search-retries` | `4` | Max retries for failed search. |
 | `--log-level` | `WARNING` | Logging verbosity. |
 | `--log-file` | `None` | Optional file log path. |
+| `--log-console` | `on` | Emit logs to stderr when enabled; pass `--no-log-console` to keep the console clean. Without `--log-file`, logs are discarded. |
 | `--question` | `None` | One‑shot non‑interactive question mode. |
 | `--embedding-model` | `embeddinggemma:300m` | Ollama embedding model used for topic similarity checks. |
 | `--embedding-similarity-threshold` | `0.35` | Minimum cosine similarity for a topic to be considered when no keywords overlap. |
@@ -433,6 +434,7 @@ Notes:
 - Supported DDGS backend names include `duckduckgo`, `bing`, `brave`, `google`, `mojeek`, `wikipedia`, `yahoo`, and `yandex`; use `auto` (default) to fan out across providers.
 - `NO_AUTO_SEARCH` is treated as a boolean flag. Only truthy values enable it: `1,true,TRUE,yes,YES,on,ON`. Setting `NO_AUTO_SEARCH=0` will not enable the flag.
 - `LOG_FILE` supports paths with spaces (quoted automatically). Example: `make run LOG_FILE="/tmp/agent logs/agent.log"`.
+- Disable console logging (so only the assistant answer shows) with `LOG_CONSOLE=0` or directly via `--no-log-console`; add `--log-file` if you want the logs persisted, otherwise they are dropped.
 - Embedding knobs are mirrored as environment variables: `EMBEDDING_MODEL`, `EMBEDDING_SIMILARITY_THRESHOLD`, `EMBEDDING_HISTORY_DECAY`, `EMBEDDING_RESULT_SIMILARITY_THRESHOLD`, and `EMBEDDING_QUERY_SIMILARITY_THRESHOLD` feed the same CLI flags (e.g., `make run EMBEDDING_MODEL=embeddinggemma:300m`).
 
 ## Development
