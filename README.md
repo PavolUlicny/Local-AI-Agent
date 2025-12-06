@@ -270,9 +270,9 @@ Search backend notes:
 Recommended tuning workflow:
 
 1. Start with model's documented max context (e.g., 8192).
-1. Run a few multi‑round searches; if rebuild logs appear, drop `--num-ctx` by ~25%.
-1. If still rebuilding, cap `--num-predict` at half of current (`8192 → 4096`).
-1. Raise again incrementally once stable.
+2. Run a few multi‑round searches; if rebuild logs appear, drop `--num-ctx` by ~25%.
+3. If still rebuilding, cap `--num-predict` at half of current (`8192 → 4096`).
+4. Raise again incrementally once stable.
 
 Model examples:
 
