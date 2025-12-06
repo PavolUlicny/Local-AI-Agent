@@ -24,7 +24,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     if args is None:
         parser = build_arg_parser()
         args = parser.parse_args()
-    configure_logging(args.log_level, args.log_file)
+    configure_logging(args.log_level, args.log_file, args.log_console)
     cfg = AgentConfig(**vars(args))
     agent = Agent(cfg)
     if args.question:

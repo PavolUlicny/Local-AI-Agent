@@ -29,6 +29,7 @@ SEARCH_MAX_RESULTS  ?=
 SEARCH_RETRIES      ?=
 LOG_LEVEL           ?=
 LOG_FILE            ?=
+LOG_CONSOLE         ?=
 NO_AUTO_SEARCH      ?=
 EMBEDDING_MODEL     ?=
 EMBEDDING_SIMILARITY_THRESHOLD ?=
@@ -60,6 +61,7 @@ EXTRA_ARGS += $(if $(SEARCH_MAX_RESULTS), --search-max-results $(SEARCH_MAX_RESU
 EXTRA_ARGS += $(if $(SEARCH_RETRIES), --search-retries $(SEARCH_RETRIES))
 EXTRA_ARGS += $(if $(LOG_LEVEL), --log-level $(LOG_LEVEL))
 EXTRA_ARGS += $(if $(LOG_FILE), --log-file "$(LOG_FILE)")
+EXTRA_ARGS += $(if $(filter 0 false FALSE no NO off OFF,$(LOG_CONSOLE)), --no-log-console)
 # Treat only common truthy values as enabling the flag; plain "0" or empty will not
 EXTRA_ARGS += $(if $(filter 1 true TRUE yes YES on ON,$(NO_AUTO_SEARCH)), --no-auto-search)
 EXTRA_ARGS += $(if $(EMBEDDING_MODEL), --embedding-model $(EMBEDDING_MODEL))

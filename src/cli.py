@@ -97,6 +97,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log-level", default=defaults.log_level, help="Logging level: DEBUG, INFO, WARNING, ERROR")
     parser.add_argument("--log-file", default=defaults.log_file, help="Optional log file path")
+    parser.add_argument(
+        "--log-console",
+        action=argparse.BooleanOptionalAction,
+        default=defaults.log_console,
+        help="Enable console logging (pass --no-log-console to silence log statements on stderr)",
+    )
     parser.add_argument("--question", default=defaults.question, help="Run once with this question and exit")
     parser.add_argument(
         "--embedding-model",
@@ -130,15 +136,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def configure_logging(level: str, log_file: str | None) -> None:
+def configure_logging(level: str, log_file: str | None, log_console: bool = True) -> None:
     level_upper = (level or "INFO").upper()
     numeric = getattr(logging, level_upper, logging.INFO)
     handlers: list[logging.Handler] = []
-    console_handler = logging.StreamHandler(sys.stderr)
-    handlers.append(console_handler)
+    if log_console:
+        console_handler = logging.StreamHandler(sys.stderr)
+        handlers.append(console_handler)
     if log_file:
         file_handler = logging.FileHandler(log_file)
         handlers.append(file_handler)
+    if not handlers:
+        # Respect --no-log-console even without a log file by discarding logs via NullHandler
+        handlers.append(logging.NullHandler())
     logging.basicConfig(
         level=numeric,
         format="%(asctime)s %(levelname)s %(message)s",

@@ -29,6 +29,7 @@ class AgentConfig:
     search_retries: int = 4
     log_level: str = "WARNING"
     log_file: str | None = None
+    log_console: bool = True
     question: str | None = None
     embedding_model: str = "embeddinggemma:300m"
     embedding_similarity_threshold: float = 0.35
