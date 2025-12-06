@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src import helpers as H
 
 
@@ -47,3 +49,49 @@ def test_topic_brief_includes_summary_and_keywords() -> None:
     brief = H._topic_brief(topic, max_keywords=2)
     assert "Summary" in brief and "Keywords" in brief
     assert "renewable" in brief
+
+
+def test_cosine_similarity_handles_matching_and_orthogonal_vectors() -> None:
+    assert H._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+    assert H._cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+def test_blend_embeddings_respects_decay() -> None:
+    blended = H._blend_embeddings([1.0, 0.0], [0.0, 1.0], decay=0.5)
+    assert blended == pytest.approx([0.5, 0.5])
+
+
+class _StubContextChain:
+    def __init__(self, outputs: list[str]):
+        self.outputs = outputs
+
+    def invoke(self, inputs):  # noqa: ANN001 - helper for tests
+        return self.outputs.pop(0) if self.outputs else "FOLLOW_UP"
+
+
+def test_select_topic_uses_embeddings_when_keywords_absent() -> None:
+    chain = _StubContextChain(["FOLLOW_UP"])
+    topic = H.Topic(
+        keywords=set(),
+        turns=[("prev question", "prev answer")],
+        summary="Energy storage roadmap",
+        embedding=[1.0, 0.0],
+    )
+
+    idx, turns, keywords = H._select_topic(
+        chain,
+        [topic],
+        question="Follow-up question",
+        base_keywords=set(),
+        max_context_turns=2,
+        current_datetime="2024-01-01 00:00:00 UTC",
+        current_year="2024",
+        current_month="01",
+        current_day="01",
+        question_embedding=[1.0, 0.0],
+        embedding_threshold=0.1,
+    )
+
+    assert idx == 0
+    assert turns  # recent history returned
+    assert keywords == set()
