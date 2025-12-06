@@ -274,16 +274,18 @@ context_mode_prompt = PromptTemplate(
     ],
     template=(
         "ROLE: Topic linkage classifier. Output exactly one label: FOLLOW_UP, EXPAND, or NEW_TOPIC.\n\n"
-        "Recent conversation:\n{recent_conversation}\n\n"
+        "Recent conversation (summary + latest turns):\n{recent_conversation}\n\n"
         "New question:\n{new_question}\n\n"
         "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
         "Definitions:\n"
-        "- FOLLOW_UP: Same topic and intent; user wants clarification or more detail on the previous answer.\n"
+        "- FOLLOW_UP: Same topic and intent; user wants clarification or more detail on the previous answer. Short pronoun-heavy prompts like 'How much does it cost?' or 'What about reliability?' count as FOLLOW_UP when the pronouns plausibly reference the summarized entities above.\n"
         "- EXPAND: Still the same broader topic but shifts angle, scope, or subtopic.\n"
         "- NEW_TOPIC: Meaningfully different subject from the conversation.\n\n"
         "Tie-breakers:\n"
+        "- If unsure whether a vague question refers to the prior answer, assume FOLLOW_UP.\n"
         "- If torn between FOLLOW_UP and EXPAND, choose FOLLOW_UP.\n"
-        "- If torn between EXPAND and NEW_TOPIC, choose EXPAND.\n\n"
+        "- If torn between EXPAND and NEW_TOPIC, choose EXPAND.\n"
+        "- Only output NEW_TOPIC if the user clearly introduces new entities, goals, or time periods absent from the conversation summary.\n\n"
         "OUTPUT: Return only the chosen label with no punctuation or commentary."
     ),
 )
