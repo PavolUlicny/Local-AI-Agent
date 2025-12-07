@@ -957,7 +957,9 @@ class Agent:
         topic_entry = self.topics[selected_topic_index]
         topic_entry.turns.append((user_query, response_text))
         history_window = max(0, cfg.max_context_turns) * 2
-        if history_window > 0 and len(topic_entry.turns) > history_window:
+        if history_window == 0:
+            topic_entry.turns = []
+        elif len(topic_entry.turns) > history_window:
             topic_entry.turns = topic_entry.turns[-history_window:]
         aggregated_keyword_source = _truncate_text(" ".join(aggregated_results), MAX_TURN_KEYWORD_SOURCE_CHARS)
         turn_keywords = _extract_keywords(" ".join([user_query, response_text, aggregated_keyword_source]))
