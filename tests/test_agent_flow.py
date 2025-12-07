@@ -161,3 +161,34 @@ def test_query_filter_embedding_skips_low_similarity_candidates(
 
     assert len(query_filter_chain.invocations) == 0
     assert len(planning_chain.invocations) >= 1
+
+
+def test_zero_context_turns_drop_history(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def fake_build_llms(cfg: AgentConfig):  # noqa: ANN001
+        return "robot", "assistant"
+
+    response_chain = DummyChain(stream_tokens=["out"])
+
+    def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
+        return {
+            "context": DummyChain(outputs=["FOLLOW_UP"]),
+            "seed": DummyChain(outputs=["seed"]),
+            "planning": DummyChain(outputs=["none"]),
+            "result_filter": DummyChain(outputs=["NO"]),
+            "query_filter": DummyChain(outputs=["NO"]),
+            "search_decision": DummyChain(outputs=["NO_SEARCH", "NO_SEARCH"]),
+            "response": DummyChain(stream_tokens=["unused"]),
+            "response_no_search": response_chain,
+        }
+
+    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
+    monkeypatch.setattr(agent_module.Agent, "_embed_text", lambda self, text: [1.0, 0.0], raising=False)
+
+    agent = agent_module.Agent(AgentConfig(no_auto_search=True, max_context_turns=0))
+    agent.answer_once("First?")
+    agent.answer_once("Second?")
+    capsys.readouterr()
+
+    assert agent.topics, "topic list should not be empty"
+    assert all(not topic.turns for topic in agent.topics)
