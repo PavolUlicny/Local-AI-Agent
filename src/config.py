@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import warnings
 
 
 @dataclass(slots=True)
@@ -13,10 +14,10 @@ class AgentConfig:
     max_followup_suggestions: int = 6
     max_fill_attempts: int = 3
     max_relevance_llm_checks: int = 2
-    assistant_num_ctx: int = 12288
-    robot_num_ctx: int = 12288
-    assistant_num_predict: int = 8192
-    robot_num_predict: int = 256
+    assistant_num_ctx: int = 8192
+    robot_num_ctx: int = 8192
+    assistant_num_predict: int = 4096
+    robot_num_predict: int = 512
     robot_temp: float = 0.0
     assistant_temp: float = 0.6
     robot_top_p: float = 0.4
@@ -29,7 +30,7 @@ class AgentConfig:
     ddg_safesearch: str = "moderate"
     ddg_backend: str = "auto"
     search_max_results: int = 5
-    search_retries: int = 4
+    search_retries: int = 3
     search_timeout: float = 10.0
     log_level: str = "WARNING"
     log_file: str | None = None
@@ -44,3 +45,44 @@ class AgentConfig:
     @property
     def auto_search_decision(self) -> bool:
         return not self.no_auto_search
+
+    def __post_init__(self) -> None:
+        # Up-front safety caps to reduce context-length rebuilds and OOMs on common 7B/8B local models.
+        max_safe_ctx = 8192
+        min_assistant_predict = 512
+        min_robot_predict = 128
+
+        if self.assistant_num_ctx > max_safe_ctx:
+            warnings.warn(
+                f"assistant_num_ctx capped to {max_safe_ctx} to fit typical 7B/8B contexts; was {self.assistant_num_ctx}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.assistant_num_ctx = max_safe_ctx
+        if self.robot_num_ctx > max_safe_ctx:
+            warnings.warn(
+                f"robot_num_ctx capped to {max_safe_ctx} to fit typical 7B/8B contexts; was {self.robot_num_ctx}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.robot_num_ctx = max_safe_ctx
+
+        if self.assistant_num_predict > self.assistant_num_ctx:
+            warnings.warn(
+                "assistant_num_predict cannot exceed assistant_num_ctx; capping to context window",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.assistant_num_predict = max(min_assistant_predict, self.assistant_num_ctx)
+        elif self.assistant_num_predict < min_assistant_predict:
+            self.assistant_num_predict = min_assistant_predict
+
+        if self.robot_num_predict > self.robot_num_ctx:
+            warnings.warn(
+                "robot_num_predict cannot exceed robot_num_ctx; capping to context window",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.robot_num_predict = max(min_robot_predict, self.robot_num_ctx)
+        elif self.robot_num_predict < min_robot_predict:
+            self.robot_num_predict = min_robot_predict
