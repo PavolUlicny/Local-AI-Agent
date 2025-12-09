@@ -54,7 +54,7 @@ Design goals:
   - LLM YES/NO validation for borderline cases (capped by `--max-relevance-llm-checks`).
   - Semantic embedding similarity that auto-accepts high-similarity snippets before the LLM runs.
 - Query gating (LLM YES/NO) to avoid off-topic expansion, with embeddings pre-filtering clearly unrelated suggestions.
-- Result deduplication (canonicalized URLs + SHA‑1 hash of assembled title/URL/snippet).
+- Result deduplication (canonicalized URLs + SHA‑256 hash of assembled title/URL/snippet).
 - Adaptive truncation of large text sections (conversation, prior answers, search corpus) with sensible cut heuristics.
 - Multi‑topic memory with keyword pruning and turn window constraints.
 - Semantic topic recall powered by configurable Ollama embeddings (defaults to `embeddinggemma:300m`).
@@ -177,7 +177,7 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 4. For each query:
 
 - Fetch `--search-max-results` results (with retry/backoff).
-- Deduplicate by URL (canonicalized) and SHA‑1 hash of assembled title/URL/snippet.
+- Deduplicate by URL (canonicalized) and SHA‑256 hash of assembled title/URL/snippet.
 - Apply fast keyword intersection relevance; escalate borderline cases to LLM (YES/NO) within `--max-relevance-llm-checks` budget.
 - Expand topic keyword set from accepted results.
 - Plan new queries; gate each with query filter classifier.
@@ -192,13 +192,10 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 - Detects context length / token window errors and performs controlled recovery: progressively halves `num_ctx` (never below 2048), caps `num_predict` at ≤ 50% of the updated context (never below 512), rebuilds affected chains, and limits attempts per stage via `MAX_REBUILD_RETRIES`.
 - Retries / exponential backoff for DDGS providers (rate limit or transient failures) with jitter.
 - Fallback paths: failing seed → use original query; failing planning → skip suggestions; failing relevance → drop result.
-- All LLM classifier outputs are normalized and regex-validated. On malformed output, defaults are stage-specific:
-  - Search decision → defaults to SEARCH (expansive)
-  - Query filter → defaults to NO (conservative)
-  - Result filter → defaults to NO (conservative)
-- If a classifier call errors (e.g., connection/model error), stage defaults apply:
-  - Search decision errors → fall back to NO_SEARCH for that turn
-  - Query filter/result filter errors → treat as NO (skip)
+- Deduplication: canonicalized URLs + SHA‑256 hash of assembled title/URL/snippet.
+- Classifier defaults:
+  - Search decision: malformed/exceptional outputs default to SEARCH; exhausted context after rebuilds falls back to NO_SEARCH.
+  - Query filter/result filter: default to NO (conservative).
   - Clarification: A "malformed output" is text that fails regex validation; this differs from an execution error/exception. Malformed → default token; error/exception → fallback behaviors above.
 - Context-length rebuilds are implemented for: search decision, seed generation, result relevance checks, planning, query filter, and final answer stages. Topic selection (context classification) does not rebuild on context errors; it proceeds without selecting a topic when needed.
 
@@ -214,10 +211,10 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 | `--max-followup-suggestions` | `--mfs` | `6` | Max query suggestions per planning cycle. |
 | `--max-fill-attempts` | `--mfa` | `3` | Extra planning passes to fill remaining slots. |
 | `--max-relevance-llm-checks` | `--mrlc` | `2` | LLM relevance validations for borderline results per query. |
-| `--assistant-num-ctx` | `--anc` | `12288` | Context window tokens for assistant chains. |
-| `--robot-num-ctx` | `--rnc` | `12288` | Context window tokens for robot (classifier/planner) chains. |
-| `--assistant-num-predict` | `--anp` | `8192` | Generation cap for assistant chains. |
-| `--robot-num-predict` | `--rnp` | `256` | Generation cap for classifier/planner chains (keeps them fast/cheap). |
+| `--assistant-num-ctx` | `--anc` | `8192` | Context window tokens for assistant chains. |
+| `--robot-num-ctx` | `--rnc` | `8192` | Context window tokens for robot (classifier/planner) chains. |
+| `--assistant-num-predict` | `--anp` | `4096` | Generation cap for assistant chains. |
+| `--robot-num-predict` | `--rnp` | `512` | Generation cap for classifier/planner chains (keeps them fast/cheap). |
 | `--robot-temp` | `--rt` | `0.0` | Temperature for classifier/planner chains. |
 | `--assistant-temp` | `--at` | `0.6` | Temperature for final answer chain. |
 | `--robot-top-p` | `--rtp` | `0.4` | Top-p for robot model. |
@@ -230,7 +227,7 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 | `--ddg-safesearch` | `--dss` | `moderate` | DDGS safe search level. |
 | `--ddg-backend` | `--db` | `auto` | DDGS backend(s): `auto`, `duckduckgo`, `bing`, `brave`, ... |
 | `--search-max-results` | `--smr` | `5` | Result fetch count per query. |
-| `--search-retries` | `--sr` | `4` | Max retries for failed search. |
+| `--search-retries` | `--sr` | `3` | Max retries for failed search (shorter backoff to keep the UI responsive). |
 | `--search-timeout` | `--st` | `10.0` | Per-request DDGS timeout in seconds. |
 | `--log-level` | `--ll` | `WARNING` | Logging verbosity. |
 | `--log-file` | `--lf` | `None` | Optional file log path. |
@@ -529,7 +526,7 @@ pre-commit run --all-files
 
 ```bash
 ruff check src tests scripts
-mypy --config-file=pyproject.toml src tests
+mypy --config-file=pyproject.toml src
 ```
 
 - Smoke test (no network calls):
@@ -571,7 +568,7 @@ python -m src.main --question "Hello"
 - GitHub Actions workflow (`.github/workflows/ci.yml`) runs on pushes/PRs to `main`:
   - `pre-commit run --all-files` (includes ruff fix/format and mypy)
   - `ruff check src tests scripts`
-  - `mypy src tests`
+  - `mypy src`
   - `python -m scripts.smoke` (no-network smoke test)
 
 Locally, you can emulate this with the commands in the Development section.
