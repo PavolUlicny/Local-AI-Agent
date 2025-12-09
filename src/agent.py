@@ -17,6 +17,12 @@ from langchain_ollama import OllamaEmbeddings
 PromptSession: Any | None
 ANSI: Any | None
 InMemoryHistory: Any | None
+if TYPE_CHECKING:
+    from prompt_toolkit import PromptSession as PromptSessionType
+    from prompt_toolkit.history import InMemoryHistory as InMemoryHistoryType
+else:
+    PromptSessionType = Any
+    InMemoryHistoryType = Any
 
 try:
     from prompt_toolkit import PromptSession as _PromptSession
@@ -110,7 +116,7 @@ class Agent:
             "answer": 0,
         }
         self.topics: List["Topic"] = []
-        self._prompt_session = None
+        self._prompt_session: PromptSessionType | None = None
         self._embedding_client: OllamaEmbeddings | None = None
         self._embedding_warning_logged = False
         self._last_error: str | None = None
@@ -144,6 +150,12 @@ class Agent:
                 close_fn()
             except Exception as exc:
                 logging.debug("Client close failed: %s", exc)
+
+    def _notify_search_retry(self, attempt: int, total_attempts: int, delay: float, reason: Exception) -> None:
+        message = f"[search retry {attempt}/{total_attempts}] waiting {delay:.1f}s before retry ({reason})"
+        logging.info(message)
+        if self._is_tty:
+            self._writeln(message)
 
     @staticmethod
     def _new_closed_ddgs(timeout: float | None = None) -> Any:
@@ -234,8 +246,9 @@ class Agent:
         self._rebuild_llms(reduced_ctx, reduced_predict)
 
     def _ddg_results(self, query: str) -> List[dict]:
-        delay = 1.0
+        delay = 0.5
         for attempt in range(1, self.cfg.search_retries + 1):
+            reason: Exception | None = None
             self.search_client = DDGS(timeout=cast(int | None, self.cfg.search_timeout))
             try:
                 raw_results = self.search_client.text(
@@ -253,22 +266,30 @@ class Agent:
                 return results
             except TimeoutException as exc:  # pragma: no cover - network
                 logging.warning(
-                    f"Search timeout for '{query}' (attempt {attempt}/{self.cfg.search_retries}); sleeping {delay:.1f}s"
+                    f"Search timeout for '{query}' (attempt {attempt}/{self.cfg.search_retries}); retrying after {delay:.1f}s"
                 )
                 logging.debug("Timeout details: %s", exc)
+                reason = exc
             except DDGSException as exc:  # pragma: no cover - network
-                logging.warning(f"DDGS search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}")
+                logging.warning(
+                    f"DDGS search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}; retrying after {delay:.1f}s"
+                )
+                reason = exc
             except Exception as exc:  # pragma: no cover - network
                 logging.warning(
-                    f"Unexpected search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}"
+                    f"Unexpected search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}; retrying after {delay:.1f}s"
                 )
+                reason = exc
             finally:
                 self._safe_close(self.search_client)
                 # Keep an already-closed client around so health checks see the attribute without leaking descriptors.
                 self.search_client = self._new_closed_ddgs(self.cfg.search_timeout)
             if attempt < self.cfg.search_retries:
-                time.sleep(delay + (random.random() * 0.5))
-                delay = min(delay * 2.0, 8.0)
+                # Provide user-facing progress hints on interactive sessions.
+                if reason is not None:
+                    self._notify_search_retry(attempt, self.cfg.search_retries, delay, reason)
+                time.sleep(delay + (random.random() * 0.2))
+                delay = min(delay * 1.75, 3.0)
         logging.warning(f"Search failed after {self.cfg.search_retries} attempts for '{query}'.")
         return []
 
@@ -300,8 +321,8 @@ class Agent:
         current_day: str,
         conversation_text: str,
         user_query: str,
-        **overrides,
-    ):
+        **overrides: Any,
+    ) -> dict[str, Any]:
         base = {
             "current_datetime": current_datetime,
             "current_year": current_year,
@@ -320,16 +341,19 @@ class Agent:
             return formatted, plain_prompt
         return plain_prompt, plain_prompt
 
-    def _build_prompt_session(self):
+    def _build_prompt_session(self) -> PromptSessionType | None:
         if PromptSession is None or InMemoryHistory is None:
             return None
-        return PromptSession(
-            history=InMemoryHistory(),
-            multiline=False,
-            wrap_lines=True,
+        return cast(
+            PromptSessionType,
+            PromptSession(
+                history=cast(InMemoryHistoryType, InMemoryHistory()),
+                multiline=False,
+                wrap_lines=True,
+            ),
         )
 
-    def _ensure_prompt_session(self):
+    def _ensure_prompt_session(self) -> PromptSessionType | None:
         if self._prompt_session is None:
             self._prompt_session = self._build_prompt_session()
         return self._prompt_session
@@ -392,7 +416,7 @@ class Agent:
         if session is None:
             # Fallback to built-in input when prompt_toolkit is unavailable.
             return input(formatted_prompt)  # noqa: A001 - shadowing built-in acceptable for prompt
-        return session.prompt(formatted_prompt)
+        return cast(str, session.prompt(formatted_prompt))
 
     def answer_once(self, question: str) -> str | None:
         try:
@@ -541,8 +565,9 @@ class Agent:
                     self._mark_error("Search decision failed; please retry.")
                     return None
             except Exception as exc:
-                logging.warning(f"Search decision failed unexpectedly; defaulting to NO_SEARCH. Error: {exc}")
-                should_search = False
+                # Default to SEARCH on unexpected classifier errors to avoid suppressing needed lookups.
+                logging.warning("Search decision crashed; defaulting to SEARCH. Error: %s", exc)
+                should_search = True
         elif not cfg.auto_search_decision and not cfg.force_search:
             should_search = False
 
