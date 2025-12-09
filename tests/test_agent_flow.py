@@ -247,7 +247,7 @@ def test_rebuild_counts_reset_each_query(monkeypatch: pytest.MonkeyPatch, capsys
 
     agent = agent_module.Agent(AgentConfig(no_auto_search=True))
     # Seed nonzero rebuild counters to ensure they are cleared per turn
-    agent.rebuild_counts = {k: 2 for k in agent.rebuild_counts}
+    agent.rebuild_counts = dict.fromkeys(agent.rebuild_counts, 2)
     agent.answer_once("Hello?")
     capsys.readouterr()
 
