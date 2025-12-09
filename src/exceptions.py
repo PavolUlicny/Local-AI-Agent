@@ -17,7 +17,7 @@ for modname in ("ollama", "ollama._types"):
     except Exception:
         continue
     if hasattr(mod, "ResponseError"):
-        _resp = getattr(mod, "ResponseError")
+        _resp = mod.ResponseError
         break
 
 ResponseError: Type[Exception] = _resp
