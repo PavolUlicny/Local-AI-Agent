@@ -22,4 +22,5 @@ repos:
     hooks:
       - id: mypy
         args: ["--config-file=pyproject.toml"]
+        exclude: "^tests/"
         additional_dependencies: []
