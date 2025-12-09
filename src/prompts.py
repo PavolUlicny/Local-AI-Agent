@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from importlib import import_module
+from typing import Any, Type, cast
 
 
-def _resolve_prompt_template():
+def _resolve_prompt_template() -> Type[Any]:
     module_paths = [
         "langchain_core.prompts",
         "langchain.prompts",
@@ -15,7 +16,7 @@ def _resolve_prompt_template():
             module = import_module(path)
             template = getattr(module, "PromptTemplate", None)
             if template is not None:
-                return template
+                return cast(Type[Any], template)
         except ImportError:
             continue
     raise ImportError(
