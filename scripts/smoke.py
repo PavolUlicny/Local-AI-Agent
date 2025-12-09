@@ -29,9 +29,12 @@ def main() -> int:
         ns_defaults = vars(ns)
         cfg_defaults = dataclasses.asdict(AgentConfig())
 
+        missing_from_cli = sorted(set(cfg_defaults) - set(ns_defaults))
+        if missing_from_cli:
+            print("DEFAULT_MISSING_IN_CLI:", ", ".join(missing_from_cli))
+            return 1
+
         for k, v in cfg_defaults.items():
-            if k not in ns_defaults:
-                continue  # CLI only validates exposed args
             if ns_defaults.get(k, object()) != v:
                 print(f"DEFAULT_MISMATCH: {k}: cli={ns_defaults.get(k)} cfg={v}")
                 return 1
