@@ -418,6 +418,7 @@ def _select_topic(
         return None, [], set(base_keywords)
 
     decisions: List[Tuple[str, int, TopicTurns]] = []
+    last_error: Exception | None = None
     for _, _, idx in top_candidates:
         topic = topics[idx]
         recent_turns = _tail_turns(topic.turns, max_context_turns)
@@ -437,8 +438,9 @@ def _select_topic(
                 }
             )
         except Exception as exc:
-            # If a single candidate evaluation fails, continue evaluating other
-            # candidates instead of aborting the entire selection cycle.
+            # Track the latest failure so the caller can be alerted if no
+            # candidates succeed.
+            last_error = exc
             logging.warning("Context classification failed for a topic: %s", exc)
             continue
         validated_context = _regex_validate(str(decision_raw), _PATTERN_CONTEXT, "NEW_TOPIC")
@@ -450,6 +452,9 @@ def _select_topic(
     for normalized, idx, recent_turns in decisions:
         if normalized == "EXPAND":
             return idx, recent_turns, base_keywords.union(topics[idx].keywords)
+
+    if last_error is not None:
+        raise last_error
 
     return None, [], set(base_keywords)
 
