@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import math
 import re
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse, urlunparse
 
@@ -92,7 +93,8 @@ _FOLLOWUP_PREFIXES = (
 # Patterns used for strict validation of LLM outputs
 _PATTERN_SEARCH_DECISION = re.compile(r"^(SEARCH|NO_SEARCH)$")
 _PATTERN_YES_NO = re.compile(r"^(YES|NO)$")
-_PATTERN_CONTEXT = re.compile(r"^(FOLLOW_UP|EXPAND|NEW_TOPIC)$")
+# Accept common separators so LLM outputs like "FOLLOW UP" or "follow-up" still map correctly.
+_PATTERN_CONTEXT = re.compile(r"^(FOLLOW[_\-\s]?UP|EXPAND|NEW[_\-\s]?TOPIC)$")
 
 # Truncation and size limits
 MAX_SINGLE_RESULT_CHARS = 2000
@@ -434,9 +436,10 @@ def _select_topic(
                     "current_day": current_day,
                 }
             )
-        except Exception:
+        except Exception as exc:
             # If a single candidate evaluation fails, continue evaluating other
             # candidates instead of aborting the entire selection cycle.
+            logging.warning("Context classification failed for a topic: %s", exc)
             continue
         validated_context = _regex_validate(str(decision_raw), _PATTERN_CONTEXT, "NEW_TOPIC")
         normalized = _normalize_context_decision(validated_context)

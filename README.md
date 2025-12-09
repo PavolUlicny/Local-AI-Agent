@@ -208,13 +208,16 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 | ------ | ------- | --------- | ------------- |
 | `--model` | `--m` | `cogito:8b` | Ollama model name/tag. |
 | `--no-auto-search` | `--nas` | off | Force NO_SEARCH unless logic changed manually. |
+| `--force-search` | `--fs` | off | Bypass classifier and always perform SEARCH for the current turn. |
 | `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds (seed + planned). |
 | `--max-context-turns` | `--mct` | `8` | Turns retained from a topic for context injection. |
 | `--max-followup-suggestions` | `--mfs` | `6` | Max query suggestions per planning cycle. |
 | `--max-fill-attempts` | `--mfa` | `3` | Extra planning passes to fill remaining slots. |
 | `--max-relevance-llm-checks` | `--mrlc` | `2` | LLM relevance validations for borderline results per query. |
-| `--num-ctx` | `--nc` | `12288` | Initial context window tokens. |
-| `--num-predict` | `--np` | `8192` | Initial generation cap tokens. |
+| `--assistant-num-ctx` | `--anc` | `12288` | Context window tokens for assistant chains. |
+| `--robot-num-ctx` | `--rnc` | `12288` | Context window tokens for robot (classifier/planner) chains. |
+| `--assistant-num-predict` | `--anp` | `8192` | Generation cap for assistant chains. |
+| `--robot-num-predict` | `--rnp` | `256` | Generation cap for classifier/planner chains (keeps them fast/cheap). |
 | `--robot-temp` | `--rt` | `0.0` | Temperature for classifier/planner chains. |
 | `--assistant-temp` | `--at` | `0.6` | Temperature for final answer chain. |
 | `--robot-top-p` | `--rtp` | `0.4` | Top-p for robot model. |
@@ -228,6 +231,7 @@ Owns the runtime orchestration: topic selection, search decision, seed generatio
 | `--ddg-backend` | `--db` | `auto` | DDGS backend(s): `auto`, `duckduckgo`, `bing`, `brave`, ... |
 | `--search-max-results` | `--smr` | `5` | Result fetch count per query. |
 | `--search-retries` | `--sr` | `4` | Max retries for failed search. |
+| `--search-timeout` | `--st` | `10.0` | Per-request DDGS timeout in seconds. |
 | `--log-level` | `--ll` | `WARNING` | Logging verbosity. |
 | `--log-file` | `--lf` | `None` | Optional file log path. |
 | `--log-console` | `--lc` | `on` | Emit logs to stderr when enabled; pass `--no-log-console` to keep the console clean. Without `--log-file`, logs are discarded. |
@@ -258,13 +262,13 @@ python -m src.main --model llama3:8b
 
 Key adjustments when switching models:
 
-- Context window (`--num-ctx`): Must not exceed the model's maximum (see the [Ollama model catalog](https://ollama.com/library) for limits). Common defaults:
+- Context window (`--assistant-num-ctx` / `--robot-num-ctx`): Must not exceed the model's maximum (see the [Ollama model catalog](https://ollama.com/library) for limits). Common defaults:
   - Llama 3 (8B/7B): 8192
   - Mistral 7B: 8192
   - Phi / small instruct models: 4096–8192
   - Some extended variants (e.g., 32K finetunes) allow larger windows; set `--num-ctx` accordingly.
 - Predict length (`--num-predict`): Keep this comfortably below available combined memory. Large values increase RAM/VRAM footprint linearly with active layers.
-- Memory tradeoff: If you hit automatic halving rebuilds early, lower `--num-ctx` first; only then reduce `--num-predict`.
+- Memory tradeoff: If you hit automatic halving rebuilds early, lower the assistant/robot context (`--assistant-num-ctx` / `--robot-num-ctx`) first; only then reduce `--assistant-num-predict` / `--robot-num-predict`.
 - Quantization: Using a more heavily quantized model (e.g., Q4_K_M) reduces memory, allowing higher `--num-ctx` without rebuilds.
 - Robot vs Assistant: Temperatures (`--robot-temp`, `--assistant-temp`) and top‑p/k are independent of model choice; adjust only for style. Some models need slightly lower `--assistant-top-p` to avoid repetition.
 - Smaller models (<4B) may benefit from reducing `--num-predict` (e.g., 2048–4096) to preserve responsiveness.
@@ -305,7 +309,7 @@ Examples: 16 GB RAM + 10 GB VRAM, 32 GB RAM CPU‑only, or 24 GB RAM + 8 GB VRAM
 Notes:
 
 - More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
-- Python: tested with Python 3.12 (CI). Earlier 3.10–3.11 may work but are not CI-tested.
+- Python: tested in CI with Python 3.12. Earlier 3.10–3.11 may work but are not guaranteed.
 - OS: Linux is expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
 - If running CPU‑only, ensure fast SSD swap; avoid paging spikes by lowering `--num-predict` if memory pressure appears.
 - Smaller GPUs (≤4 GB VRAM) can still run but may force model quantization or offload; keep expectations modest.
@@ -371,6 +375,13 @@ pip install -U pip
 pip install -r requirements.txt
 ollama pull cogito:8b
 ollama pull embeddinggemma:300m
+```
+
+For development tooling (ruff, mypy, pytest, pre-commit), install the pinned dev set too:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+# or: make install-dev
 ```
 
 Notes:
@@ -505,12 +516,12 @@ Notes:
 
 ```bash
 pip install -r requirements-dev.txt
-pre-commit install
 ```
 
 - Pre-commit hooks (format, lint, type-check):
 
 ```bash
+pre-commit install
 pre-commit run --all-files
 ```
 

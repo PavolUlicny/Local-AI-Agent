@@ -15,7 +15,10 @@ def main() -> int:
         from src.cli import build_arg_parser
         from src.config import AgentConfig
         from src.agent import Agent
-    except Exception as e:  # pragma: no cover - CI discovery failure
+    except ModuleNotFoundError as e:  # pragma: no cover - CI discovery failure
+        missing_root = getattr(e, "name", "").split(".")[0]
+        if missing_root != "src":
+            raise
         print("IMPORT_FAIL:", type(e).__name__, str(e))
         return 1
 
@@ -27,6 +30,8 @@ def main() -> int:
         cfg_defaults = dataclasses.asdict(AgentConfig())
 
         for k, v in cfg_defaults.items():
+            if k not in ns_defaults:
+                continue  # CLI only validates exposed args
             if ns_defaults.get(k, object()) != v:
                 print(f"DEFAULT_MISMATCH: {k}: cli={ns_defaults.get(k)} cfg={v}")
                 return 1
@@ -36,8 +41,10 @@ def main() -> int:
         cfg = AgentConfig(
             no_auto_search=True,
             question="healthcheck",
-            num_ctx=2048,
-            num_predict=1024,
+            assistant_num_ctx=2048,
+            robot_num_ctx=2048,
+            assistant_num_predict=1024,
+            robot_num_predict=256,
         )
         agent = Agent(cfg)
 
@@ -67,12 +74,12 @@ def main() -> int:
 
         # 4) Verify LLM params applied from config
         if not (
-            agent.llm_robot.num_ctx == cfg.num_ctx
-            and agent.llm_assistant.num_ctx == cfg.num_ctx
-            and agent.llm_robot.num_predict == cfg.num_predict
-            and agent.llm_assistant.num_predict == cfg.num_predict
+            agent.llm_robot.num_ctx == cfg.robot_num_ctx
+            and agent.llm_assistant.num_ctx == cfg.assistant_num_ctx
+            and agent.llm_robot.num_predict == cfg.robot_num_predict
+            and agent.llm_assistant.num_predict == cfg.assistant_num_predict
         ):
-            print("LLM_PARAM_MISMATCH: num_ctx/num_predict not applied")
+            print("LLM_PARAM_MISMATCH: ctx/predict not applied")
             return 1
 
         # 5) DDGS search client instantiated

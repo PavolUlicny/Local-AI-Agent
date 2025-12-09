@@ -124,3 +124,9 @@ def test_select_topic_fallbacks_to_latest_topic_on_followup() -> None:
     assert idx == 1  # picks most recent topic
     assert turns == latest_topic.turns[-2:]
     assert keywords.issuperset({"cost", "gpu"})
+
+
+def test_context_regex_accepts_spaced_follow_up() -> None:
+    validated = H._regex_validate("follow up", H._PATTERN_CONTEXT, "NEW_TOPIC")
+    assert validated == "FOLLOW UP"
+    assert H._normalize_context_decision(validated) == "FOLLOW_UP"

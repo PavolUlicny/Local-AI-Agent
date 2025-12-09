@@ -7,13 +7,16 @@ from dataclasses import dataclass
 class AgentConfig:
     model: str = "cogito:8b"
     no_auto_search: bool = False
+    force_search: bool = False
     max_rounds: int = 12
     max_context_turns: int = 8
     max_followup_suggestions: int = 6
     max_fill_attempts: int = 3
     max_relevance_llm_checks: int = 2
-    num_ctx: int = 12288
-    num_predict: int = 8192
+    assistant_num_ctx: int = 12288
+    robot_num_ctx: int = 12288
+    assistant_num_predict: int = 8192
+    robot_num_predict: int = 256
     robot_temp: float = 0.0
     assistant_temp: float = 0.6
     robot_top_p: float = 0.4
@@ -27,6 +30,7 @@ class AgentConfig:
     ddg_backend: str = "auto"
     search_max_results: int = 5
     search_retries: int = 4
+    search_timeout: float = 10.0
     log_level: str = "WARNING"
     log_file: str | None = None
     log_console: bool = True

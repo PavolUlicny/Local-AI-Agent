@@ -20,14 +20,18 @@ if TYPE_CHECKING:  # only needed for type hints
 
 
 def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
+    robot_ctx = cfg.robot_num_ctx
+    assistant_ctx = cfg.assistant_num_ctx
+    robot_predict = cfg.robot_num_predict
+    assistant_predict = cfg.assistant_num_predict
     llm_robot = OllamaLLM(
         model=cfg.model,
         temperature=cfg.robot_temp,
         top_p=cfg.robot_top_p,
         top_k=cfg.robot_top_k,
         repeat_penalty=cfg.robot_repeat_penalty,
-        num_predict=cfg.num_predict,
-        num_ctx=cfg.num_ctx,
+        num_predict=robot_predict,
+        num_ctx=robot_ctx,
     )
     llm_assistant = OllamaLLM(
         model=cfg.model,
@@ -35,8 +39,8 @@ def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
         top_p=cfg.assistant_top_p,
         top_k=cfg.assistant_top_k,
         repeat_penalty=cfg.assistant_repeat_penalty,
-        num_predict=cfg.num_predict,
-        num_ctx=cfg.num_ctx,
+        num_predict=assistant_predict,
+        num_ctx=assistant_ctx,
     )
     return llm_robot, llm_assistant
 

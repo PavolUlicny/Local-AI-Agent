@@ -14,7 +14,10 @@ if TYPE_CHECKING:  # make the AgentConfig type available to type checkers
 else:
     try:
         _config = importlib.import_module("src.config")
-    except Exception:  # pragma: no cover - fallback for script-style runs
+    except ModuleNotFoundError as exc:  # pragma: no cover - fallback for script-style runs
+        missing_root = getattr(exc, "name", "").split(".")[0]
+        if missing_root != "src":
+            raise
         _config = importlib.import_module("config")
 
     _AgentConfig: Any = _config.AgentConfig
@@ -32,6 +35,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=defaults.no_auto_search,
         help="Disable automatic web search decision",
+    )
+    parser.add_argument(
+        "--force-search",
+        "--fs",
+        action="store_true",
+        default=defaults.force_search,
+        help="Always perform web search and skip the search decision classifier",
     )
     parser.add_argument("--max-rounds", "--mr", type=int, default=defaults.max_rounds, help="Maximum search rounds")
     parser.add_argument(
@@ -62,8 +72,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=defaults.max_relevance_llm_checks,
         help="LLM checks allowed for borderline relevance",
     )
-    parser.add_argument("--num-ctx", "--nc", type=int, default=defaults.num_ctx, help="Model context window tokens")
-    parser.add_argument("--num-predict", "--np", type=int, default=defaults.num_predict, help="Max tokens to predict")
+    parser.add_argument(
+        "--assistant-num-ctx",
+        "--anc",
+        type=int,
+        default=defaults.assistant_num_ctx,
+        help="Context window tokens for assistant chains",
+    )
+    parser.add_argument(
+        "--robot-num-ctx",
+        "--rnc",
+        type=int,
+        default=defaults.robot_num_ctx,
+        help="Context window tokens for robot (classifier/planner) chains",
+    )
+    parser.add_argument(
+        "--assistant-num-predict",
+        "--anp",
+        type=int,
+        default=defaults.assistant_num_predict,
+        help="Max tokens to predict for assistant chains",
+    )
+    parser.add_argument(
+        "--robot-num-predict",
+        "--rnp",
+        type=int,
+        default=defaults.robot_num_predict,
+        help="Max tokens to predict for robot (classifier/planner) chains",
+    )
     parser.add_argument(
         "--robot-temp", "--rt", type=float, default=defaults.robot_temp, help="Temperature for robot LLM"
     )
@@ -125,6 +161,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Retry attempts for transient search errors",
     )
     parser.add_argument(
+        "--search-timeout",
+        "--st",
+        type=float,
+        default=defaults.search_timeout,
+        help="Per-request timeout (seconds) for DDGS search calls",
+    )
+    parser.add_argument(
         "--log-level", "--ll", default=defaults.log_level, help="Logging level: DEBUG, INFO, WARNING, ERROR"
     )
     parser.add_argument("--log-file", "--lf", default=defaults.log_file, help="Optional log file path")
@@ -173,7 +216,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def configure_logging(level: str, log_file: str | None, log_console: bool = True) -> None:
+def configure_logging(level: str, log_file: str | None, log_console: bool = True, *, force: bool = True) -> None:
     level_upper = (level or "INFO").upper()
     numeric = getattr(logging, level_upper, logging.INFO)
     handlers: list[logging.Handler] = []
@@ -186,8 +229,12 @@ def configure_logging(level: str, log_file: str | None, log_console: bool = True
     if not handlers:
         # Respect --no-log-console even without a log file by discarding logs via NullHandler
         handlers.append(logging.NullHandler())
-    logging.basicConfig(
-        level=numeric,
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=handlers,
-    )
+    if handlers:
+        logging.basicConfig(
+            level=numeric,
+            format="%(asctime)s %(levelname)s %(message)s",
+            handlers=handlers,
+            force=force,
+        )
+    else:
+        logging.getLogger().setLevel(numeric)

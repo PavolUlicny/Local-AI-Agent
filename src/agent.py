@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List, Set, TYPE_CHECKING
+from typing import Any, List, Set, TYPE_CHECKING, cast
 import hashlib
 import importlib
 import logging
@@ -8,6 +8,7 @@ import random
 import sys
 import time
 from datetime import datetime, timezone
+from typing import TextIO
 
 from ddgs import DDGS
 from ddgs.exceptions import DDGSException, TimeoutException
@@ -38,7 +39,10 @@ try:
     _config = importlib.import_module("src.config")
     _chains = importlib.import_module("src.chains")
     _exceptions = importlib.import_module("src.exceptions")
-except Exception:  # fallback when imported as top-level module
+except ModuleNotFoundError as exc:  # fallback when imported as top-level module
+    missing_root = getattr(exc, "name", "").split(".")[0]
+    if missing_root != "src":
+        raise
     _config = importlib.import_module("config")
     _chains = importlib.import_module("chains")
     _exceptions = importlib.import_module("exceptions")
@@ -53,7 +57,10 @@ ResponseError = _exceptions.ResponseError
 # if using `from ... import ...` in try/except).
 try:
     _helpers = importlib.import_module("src.helpers")
-except Exception:  # pragma: no cover - local dev fallback
+except ModuleNotFoundError as exc:  # pragma: no cover - local dev fallback
+    missing_root = getattr(exc, "name", "").split(".")[0]
+    if missing_root != "src":
+        raise
     _helpers = importlib.import_module("helpers")
 
 _Topic = _helpers.Topic
@@ -88,11 +95,12 @@ MAX_PROMPT_RECENT_TURNS = _helpers.MAX_PROMPT_RECENT_TURNS
 
 
 class Agent:
-    def __init__(self, cfg: AgentConfig):
+    def __init__(self, cfg: AgentConfig, *, output_stream: TextIO | None = None, is_tty: bool | None = None):
         self.cfg = cfg
         self.llm_robot, self.llm_assistant = build_llms(cfg)
         self.chains = build_chains(self.llm_robot, self.llm_assistant)
-        self.search_client = DDGS()
+        # Maintain a DDGS client attribute for smoke/health checks; keep it closed to avoid lingering sockets.
+        self.search_client: Any = self._new_closed_ddgs(cfg.search_timeout)
         self.rebuild_counts = {
             "search_decision": 0,
             "seed": 0,
@@ -104,6 +112,68 @@ class Agent:
         self.topics: List["Topic"] = []
         self._prompt_session = None
         self._embedding_client: OllamaEmbeddings | None = None
+        self._embedding_warning_logged = False
+        self._last_error: str | None = None
+        self._out: TextIO = output_stream or sys.stdout
+        self._is_tty: bool = bool(is_tty if is_tty is not None else getattr(self._out, "isatty", lambda: False)())
+        self._base_llm_params = {
+            "assistant_num_ctx": cfg.assistant_num_ctx,
+            "robot_num_ctx": cfg.robot_num_ctx,
+            "assistant_num_predict": cfg.assistant_num_predict,
+            "robot_num_predict": cfg.robot_num_predict,
+        }
+
+    def _write(self, text: str) -> None:
+        try:
+            self._out.write(text)
+            if hasattr(self._out, "flush"):
+                self._out.flush()
+        except Exception as exc:
+            logging.debug("Output stream write failed: %s", exc)
+
+    def _writeln(self, text: str = "") -> None:
+        self._write(f"{text}\n")
+
+    @staticmethod
+    def _safe_close(client: Any) -> None:
+        if client is None:
+            return
+        close_fn = getattr(client, "close", None)
+        if callable(close_fn):
+            try:
+                close_fn()
+            except Exception as exc:
+                logging.debug("Client close failed: %s", exc)
+
+    @staticmethod
+    def _new_closed_ddgs(timeout: float | None = None) -> Any:
+        try:
+            client = DDGS(timeout=cast(int | None, timeout))
+            Agent._safe_close(client)
+            return client
+        except Exception:
+            return None
+
+    def _reset_rebuild_counts(self) -> None:
+        for key in self.rebuild_counts:
+            self.rebuild_counts[key] = 0
+
+    def _char_budget(self, base: int) -> int:
+        # Roughly map tokens→chars (~4 chars/token) and keep a safety margin.
+        ctx_tokens = min(self.cfg.assistant_num_ctx, self.cfg.robot_num_ctx)
+        return min(base, max(1024, int(ctx_tokens * 4 * 0.8)))
+
+    def _mark_error(self, message: str) -> str:
+        self._last_error = message
+        return message
+
+    def _clear_error(self) -> None:
+        self._last_error = None
+
+    def _close_clients(self) -> None:
+        client = getattr(self, "search_client", None)
+        self._safe_close(client)
+        self.search_client = None
 
     def _print_welcome_banner(self) -> None:
         message = "\n".join(
@@ -113,30 +183,60 @@ class Agent:
                 "Enter submits your message. Type 'exit' to quit.",
             ]
         )
-        if sys.stdout.isatty():
-            print(f"\n\033[96m{message}\033[0m")
+        if self._is_tty:
+            self._writeln(f"\n\033[96m{message}\033[0m")
         else:
-            print(message)
+            self._writeln(message)
 
     # Dynamic config updates after rebuild
     def _rebuild_llms(self, new_ctx: int, new_predict: int) -> None:
-        self.cfg.num_ctx = new_ctx
-        self.cfg.num_predict = new_predict
+        self.cfg.assistant_num_ctx = new_ctx
+        self.cfg.robot_num_ctx = new_ctx
+        self.cfg.assistant_num_predict = new_predict
+        self.cfg.robot_num_predict = min(self.cfg.robot_num_predict, new_predict)
         self.llm_robot, self.llm_assistant = build_llms(self.cfg)
+        self.chains = build_chains(self.llm_robot, self.llm_assistant)
+
+    def _restore_llm_params(self) -> None:
+        base = self._base_llm_params
+        cfg = self.cfg
+        needs_restore = any(
+            [
+                cfg.assistant_num_ctx != base["assistant_num_ctx"],
+                cfg.robot_num_ctx != base["robot_num_ctx"],
+                cfg.assistant_num_predict != base["assistant_num_predict"],
+                cfg.robot_num_predict != base["robot_num_predict"],
+            ]
+        )
+        if not needs_restore:
+            return
+        cfg.assistant_num_ctx = base["assistant_num_ctx"]
+        cfg.robot_num_ctx = base["robot_num_ctx"]
+        cfg.assistant_num_predict = base["assistant_num_predict"]
+        cfg.robot_num_predict = base["robot_num_predict"]
+        self.llm_robot, self.llm_assistant = build_llms(cfg)
         self.chains = build_chains(self.llm_robot, self.llm_assistant)
 
     def _reduce_context_and_rebuild(self, stage_key: str, label: str) -> None:
         self.rebuild_counts[stage_key] += 1
-        reduced_ctx = max(2048, self.cfg.num_ctx // 2)
-        reduced_predict = max(512, min(self.cfg.num_predict, reduced_ctx // 2))
+        current_ctx = min(self.cfg.assistant_num_ctx, self.cfg.robot_num_ctx)
+        current_predict = self.cfg.assistant_num_predict
+        reduced_ctx = max(2048, current_ctx // 2)
+        reduced_predict = max(512, min(current_predict, reduced_ctx // 2))
         logging.info(
-            f"Context too large ({label}); rebuild {self.rebuild_counts[stage_key]}/{MAX_REBUILD_RETRIES} with num_ctx={reduced_ctx}, num_predict={reduced_predict}."
+            "Context too large (%s); rebuild %s/%s with num_ctx=%s, num_predict=%s.",
+            label,
+            self.rebuild_counts[stage_key],
+            MAX_REBUILD_RETRIES,
+            reduced_ctx,
+            reduced_predict,
         )
         self._rebuild_llms(reduced_ctx, reduced_predict)
 
     def _ddg_results(self, query: str) -> List[dict]:
         delay = 1.0
         for attempt in range(1, self.cfg.search_retries + 1):
+            self.search_client = DDGS(timeout=cast(int | None, self.cfg.search_timeout))
             try:
                 raw_results = self.search_client.text(
                     query,
@@ -162,8 +262,13 @@ class Agent:
                 logging.warning(
                     f"Unexpected search error for '{query}' (attempt {attempt}/{self.cfg.search_retries}): {exc}"
                 )
-            time.sleep(delay + (random.random() * 0.5))
-            delay = min(delay * 2.0, 8.0)
+            finally:
+                self._safe_close(self.search_client)
+                # Keep an already-closed client around so health checks see the attribute without leaking descriptors.
+                self.search_client = self._new_closed_ddgs(self.cfg.search_timeout)
+            if attempt < self.cfg.search_retries:
+                time.sleep(delay + (random.random() * 0.5))
+                delay = min(delay * 2.0, 8.0)
         logging.warning(f"Search failed after {self.cfg.search_retries} attempts for '{query}'.")
         return []
 
@@ -210,17 +315,14 @@ class Agent:
 
     def _prompt_messages(self) -> tuple[Any, str]:
         plain_prompt = "> "
-        if ANSI is not None and sys.stdout.isatty():
+        if ANSI is not None and self._is_tty:
             formatted = ANSI("\n\033[92m> \033[0m")
             return formatted, plain_prompt
         return plain_prompt, plain_prompt
 
     def _build_prompt_session(self):
         if PromptSession is None or InMemoryHistory is None:
-            raise RuntimeError(
-                "prompt_toolkit is required for interactive input; run 'pip install -r requirements.txt'."
-            )
-
+            return None
         return PromptSession(
             history=InMemoryHistory(),
             multiline=False,
@@ -239,7 +341,13 @@ class Agent:
             try:
                 self._embedding_client = OllamaEmbeddings(model=self.cfg.embedding_model)
             except Exception as exc:
-                logging.warning("Unable to initialize embedding model '%s': %s", self.cfg.embedding_model, exc)
+                if not self._embedding_warning_logged:
+                    logging.warning(
+                        "Embedding model '%s' unavailable; semantic similarity checks are disabled (%s)",
+                        self.cfg.embedding_model,
+                        exc,
+                    )
+                    self._embedding_warning_logged = True
                 self._embedding_client = None
         return self._embedding_client
 
@@ -281,28 +389,50 @@ class Agent:
     def _read_user_query(self) -> str:
         formatted_prompt, _ = self._prompt_messages()
         session = self._ensure_prompt_session()
+        if session is None:
+            # Fallback to built-in input when prompt_toolkit is unavailable.
+            return input(formatted_prompt)  # noqa: A001 - shadowing built-in acceptable for prompt
         return session.prompt(formatted_prompt)
 
-    def answer_once(self, question: str) -> str:
-        return self._handle_query(question, one_shot=True)
+    def answer_once(self, question: str) -> str | None:
+        try:
+            return self._handle_query(question, one_shot=True)
+        finally:
+            self._close_clients()
 
     def run(self) -> None:  # interactive loop
         self._print_welcome_banner()
-        while True:
-            try:
-                user_query = self._read_user_query().strip()
-            except (KeyboardInterrupt, EOFError):
-                logging.info("Exiting due to interrupt/EOF.")
-                return
-            if not user_query:
-                logging.info("No input provided.")
-                continue
-            if user_query.lower() in {"exit", "quit"}:
-                logging.info("Goodbye!")
-                return
-            self._handle_query(user_query, one_shot=False)
+        try:
+            while True:
+                try:
+                    user_query = self._read_user_query().strip()
+                except (KeyboardInterrupt, EOFError):
+                    logging.info("Exiting due to interrupt/EOF.")
+                    return
+                if not user_query:
+                    logging.info("No input provided.")
+                    continue
+                if user_query.lower() in {"exit", "quit"}:
+                    logging.info("Goodbye!")
+                    return
+                self._handle_query(user_query, one_shot=False)
+                if self._last_error:
+                    self._writeln(self._last_error)
+                    if not self.cfg.log_console:
+                        logging.error(self._last_error)
+                    self._clear_error()
+        finally:
+            self._close_clients()
 
-    def _handle_query(self, user_query: str, one_shot: bool) -> str:
+    def _handle_query(self, user_query: str, one_shot: bool) -> str | None:
+        try:
+            return self._handle_query_core(user_query, one_shot)
+        finally:
+            self._restore_llm_params()
+
+    def _handle_query_core(self, user_query: str, one_shot: bool) -> str | None:
+        self._clear_error()
+        self._reset_rebuild_counts()
         cfg = self.cfg
         current_datetime = _current_datetime_utc()
         dt_obj = datetime.now(timezone.utc)
@@ -329,7 +459,8 @@ class Agent:
             message = str(exc)
             if "not found" in message.lower():
                 logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                return None
             selected_topic_index = None
             recent_history = []
             topic_keywords = set(question_keywords)
@@ -338,7 +469,6 @@ class Agent:
             selected_topic_index = None
             recent_history = []
             topic_keywords = set(question_keywords)
-
         topic_brief_text = ""
         if selected_topic_index is not None and selected_topic_index < len(self.topics):
             topic_brief_text = _topic_brief(self.topics[selected_topic_index])
@@ -349,7 +479,7 @@ class Agent:
         conversation_text = _format_turns(recent_for_prompt, "No prior relevant conversation.")
         if topic_brief_text:
             conversation_text = f"Topic brief:\n{topic_brief_text}\n\nRecent turns:\n{conversation_text}"
-        conversation_text = _truncate_text(conversation_text, MAX_CONVERSATION_CHARS)
+        conversation_text = _truncate_text(conversation_text, self._char_budget(MAX_CONVERSATION_CHARS))
         prior_responses_text = (
             _collect_prior_responses(self.topics[selected_topic_index], max_chars=MAX_PRIOR_RESPONSE_CHARS)
             if selected_topic_index is not None
@@ -357,15 +487,14 @@ class Agent:
         )
         if topic_brief_text:
             prior_responses_text = f"{topic_brief_text}\n\nRecent answers:\n{prior_responses_text}"
-        prior_responses_text = _truncate_text(prior_responses_text, MAX_PRIOR_RESPONSE_CHARS)
+        prior_responses_text = _truncate_text(prior_responses_text, self._char_budget(MAX_PRIOR_RESPONSE_CHARS))
 
         aggregated_results: List[str] = []
-        seen_results: Set[str] = set()
         seen_result_hashes: Set[str] = set()
         seen_urls: Set[str] = set()
 
-        should_search = False
-        if cfg.auto_search_decision:
+        should_search = bool(cfg.force_search)
+        if not should_search and cfg.auto_search_decision:
             try:
                 decision_raw = self.chains["search_decision"].invoke(
                     self._inputs(
@@ -383,7 +512,8 @@ class Agent:
             except ResponseError as exc:
                 if "not found" in str(exc).lower():
                     logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                    return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                    self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                    return None
                 if _is_context_length_error(str(exc)):
                     if self.rebuild_counts["search_decision"] < MAX_REBUILD_RETRIES:
                         self._reduce_context_and_rebuild("search_decision", "search decision")
@@ -407,11 +537,14 @@ class Agent:
                         logging.info("Reached search decision rebuild cap; defaulting to NO_SEARCH fallback.")
                         should_search = False
                 else:
-                    logging.warning("Search decision failed with non-context error; defaulting to NO_SEARCH.")
-                    should_search = False
+                    logging.error("Search decision failed: %s", exc)
+                    self._mark_error("Search decision failed; please retry.")
+                    return None
             except Exception as exc:
                 logging.warning(f"Search decision failed unexpectedly; defaulting to NO_SEARCH. Error: {exc}")
                 should_search = False
+        elif not cfg.auto_search_decision and not cfg.force_search:
+            should_search = False
 
         if should_search:
             primary_search_query = user_query
@@ -432,7 +565,8 @@ class Agent:
             except ResponseError as exc:
                 if "not found" in str(exc).lower():
                     logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                    return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                    self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                    return None
                 if _is_context_length_error(str(exc)):
                     if self.rebuild_counts["seed"] < MAX_REBUILD_RETRIES:
                         self._reduce_context_and_rebuild("seed", "seed")
@@ -456,8 +590,9 @@ class Agent:
                         logging.info("Reached seed rebuild cap; using original user query as search seed.")
                         primary_search_query = user_query
                 else:
-                    logging.warning("Seed generation failed; using original user query as search seed.")
-                    primary_search_query = user_query
+                    logging.error("Seed generation failed: %s", exc)
+                    self._mark_error("Seed query generation failed; please retry.")
+                    return None
             except Exception as exc:
                 logging.warning(f"Seed generation failed unexpectedly; using original query. Error: {exc}")
                 primary_search_query = user_query
@@ -469,7 +604,16 @@ class Agent:
                 topic_keywords.update(_extract_keywords(primary_search_query))
             max_rounds = cfg.max_rounds
             round_index = 0
+            iteration_guard = max(max_rounds * 4, 20)
+            iterations = 0
             while round_index < len(pending_queries) and round_index < max_rounds:
+                iterations += 1
+                if iterations > iteration_guard:
+                    logging.warning(
+                        "Search loop aborted after %d iterations without progress; breaking to avoid a stall.",
+                        iteration_guard,
+                    )
+                    break
                 current_query = pending_queries[round_index]
                 results_list = self._ddg_results(current_query)
                 accepted_any = False
@@ -492,13 +636,10 @@ class Agent:
                         ]
                         if part
                     )
-                    result_hash = hashlib.sha1(assembled.encode("utf-8", errors="ignore")).hexdigest()
+                    result_hash = hashlib.sha256(assembled.encode("utf-8", errors="ignore")).hexdigest()
                     if result_hash in seen_result_hashes:
                         continue
                     result_text = _truncate_result(assembled)
-                    normalized_result = result_text.strip()
-                    if normalized_result and normalized_result in seen_results:
-                        continue
                     keywords_source = " ".join([part for part in [title, snippet] if part])
                     relevant = _is_relevant(result_text, topic_keywords)
                     if not relevant:
@@ -540,7 +681,10 @@ class Agent:
                                     logging.error(
                                         f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                                     )
-                                    return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                                    self._mark_error(
+                                        f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                                    )
+                                    return None
                                 if _is_context_length_error(str(exc)):
                                     if self.rebuild_counts["relevance"] < MAX_REBUILD_RETRIES:
                                         self._reduce_context_and_rebuild("relevance", "relevance")
@@ -573,7 +717,9 @@ class Agent:
                                         relevance_decision = "NO"
                                 else:
                                     logging.info(
-                                        f"Relevance check failed; skipping one result for '{current_query}'. Error: {exc}"
+                                        "Relevance check failed; skipping one result for '%s'. Error: %s",
+                                        current_query,
+                                        exc,
                                     )
                                     relevance_decision = "NO"
                             except Exception as exc:
@@ -586,7 +732,6 @@ class Agent:
                             else:
                                 continue
                     aggregated_results.append(result_text)
-                    seen_results.add(normalized_result)
                     seen_result_hashes.add(result_hash)
                     if norm_link:
                         seen_urls.add(norm_link)
@@ -605,7 +750,7 @@ class Agent:
                     continue
                 suggestion_limit = min(cfg.max_followup_suggestions, remaining_slots)
                 results_to_date = "\n\n".join(aggregated_results) or "No results yet."
-                results_to_date = _truncate_text(results_to_date, MAX_SEARCH_RESULTS_CHARS)
+                results_to_date = _truncate_text(results_to_date, self._char_budget(MAX_SEARCH_RESULTS_CHARS))
                 try:
                     suggestions_raw = self.chains["planning"].invoke(
                         self._inputs(
@@ -623,7 +768,8 @@ class Agent:
                 except ResponseError as exc:
                     if "not found" in str(exc).lower():
                         logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                        return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                        self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                        return None
                     if _is_context_length_error(str(exc)):
                         if self.rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
                             self._reduce_context_and_rebuild("planning", "planning")
@@ -648,8 +794,9 @@ class Agent:
                             logging.info("Reached planning rebuild cap; no new suggestions this round.")
                             suggestions_raw = "NONE"
                     else:
-                        logging.info(f"Could not plan follow-up searches: {exc}")
-                        suggestions_raw = "NONE"
+                        logging.error("Query planning failed: %s", exc)
+                        self._mark_error("Query planning failed; please retry.")
+                        return None
                 except Exception as exc:
                     logging.info(f"Planning failed unexpectedly; skipping suggestions this round. Error: {exc}")
                     suggestions_raw = "NONE"
@@ -697,7 +844,8 @@ class Agent:
                     except ResponseError as exc:
                         if "not found" in str(exc).lower():
                             logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                            return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                            self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                            return None
                         if _is_context_length_error(str(exc)):
                             if self.rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
                                 self._reduce_context_and_rebuild("query_filter", "query filter")
@@ -757,7 +905,8 @@ class Agent:
                     except ResponseError as exc:
                         if "not found" in str(exc).lower():
                             logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                            break
+                            self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                            return None
                         if _is_context_length_error(str(exc)):
                             if self.rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
                                 self._reduce_context_and_rebuild("planning", "planning")
@@ -782,7 +931,8 @@ class Agent:
                                 logging.info("Reached planning rebuild cap during fill; stopping additional planning.")
                                 break
                         else:
-                            logging.info(f"Could not plan additional fill queries: {exc}")
+                            logging.error("Additional query planning failed: %s", exc)
+                            self._mark_error("Additional query planning failed; please retry.")
                             break
                     except Exception as exc:
                         logging.info(f"Planning crashed during fill; stopping additional planning. Error: {exc}")
@@ -833,7 +983,10 @@ class Agent:
                                 logging.error(
                                     f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
                                 )
-                                continue
+                                self._mark_error(
+                                    f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                                )
+                                return None
                             if _is_context_length_error(str(exc)):
                                 if self.rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
                                     self._reduce_context_and_rebuild("query_filter", "query filter")
@@ -876,7 +1029,7 @@ class Agent:
             if should_search and aggregated_results
             else ("No search results collected." if should_search else "No web search performed.")
         )
-        search_results_text = _truncate_text(search_results_text, MAX_SEARCH_RESULTS_CHARS)
+        search_results_text = _truncate_text(search_results_text, self._char_budget(MAX_SEARCH_RESULTS_CHARS))
         if should_search:
             resp_inputs = self._inputs(
                 current_datetime,
@@ -905,7 +1058,8 @@ class Agent:
         except ResponseError as exc:
             if "not found" in str(exc).lower():
                 logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                return f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry."
+                self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                return None
             if _is_context_length_error(str(exc)):
                 if self.rebuild_counts["answer"] < MAX_REBUILD_RETRIES:
                     self._reduce_context_and_rebuild("answer", "answer")
@@ -914,34 +1068,45 @@ class Agent:
                         response_stream = chain.stream(resp_inputs)
                     except ResponseError as exc2:
                         logging.error(f"Answer generation failed after retry: {exc2}")
-                        return "Answer generation failed after retry; see logs for details."
+                        self._mark_error("Answer generation failed after retry; see logs for details.")
+                        return None
                 else:
                     logging.error("Reached answer generation rebuild cap; please shorten your query or reset session.")
-                    return "Answer generation failed: exceeded rebuild attempts; please shorten your query or reset session."
+                    self._mark_error(
+                        "Answer generation failed: exceeded rebuild attempts; "
+                        "please shorten your query or reset session."
+                    )
+                    return None
             else:
                 logging.error(f"Answer generation failed: {exc}")
-                return "Answer generation failed; see logs for details."
+                self._mark_error("Answer generation failed; see logs for details.")
+                return None
         except Exception as exc:
             logging.error(f"Answer generation failed unexpectedly: {exc}")
-            return "Answer generation failed unexpectedly; see logs for details."
-        is_tty = sys.stdout.isatty()
-        if is_tty:
-            print("\n\033[91m[Answer]\033[0m")
+            self._mark_error("Answer generation failed unexpectedly; see logs for details.")
+            return None
+        if self._is_tty:
+            self._writeln("\n\033[91m[Answer]\033[0m")
         else:
-            print("\n[Answer]")
+            self._writeln("\n[Answer]")
         response_chunks: List[str] = []
+        stream_error: Exception | None = None
         try:
             for chunk in response_stream:
                 response_chunks.append(chunk)
-                print(chunk, end="", flush=True)
+                self._write(chunk)
         except KeyboardInterrupt:
             logging.info("Streaming interrupted by user.")
         except Exception as exc:
+            stream_error = exc
             logging.error(f"Streaming error: {exc}")
         if response_chunks and not response_chunks[-1].endswith("\n"):
-            print()
+            self._writeln()
         if one_shot:
-            print()
+            self._writeln()
+        if stream_error:
+            self._mark_error("Answer streaming failed; please retry.")
+            return None
         response_text = "".join(response_chunks)
         if selected_topic_index is None:
             initial_embedding = list(question_embedding) if question_embedding else None
@@ -961,7 +1126,10 @@ class Agent:
             topic_entry.turns = []
         elif len(topic_entry.turns) > history_window:
             topic_entry.turns = topic_entry.turns[-history_window:]
-        aggregated_keyword_source = _truncate_text(" ".join(aggregated_results), MAX_TURN_KEYWORD_SOURCE_CHARS)
+        aggregated_keyword_source = _truncate_text(
+            " ".join(aggregated_results),
+            self._char_budget(MAX_TURN_KEYWORD_SOURCE_CHARS),
+        )
         turn_keywords = _extract_keywords(" ".join([user_query, response_text, aggregated_keyword_source]))
         if not turn_keywords:
             turn_keywords = set(question_keywords)

@@ -12,8 +12,10 @@ MAX_CONTEXT_TURNS   ?= # --max-context-turns / --mct
 MAX_FOLLOWUP_SUGGESTIONS ?= # --max-followup-suggestions / --mfs
 MAX_FILL_ATTEMPTS   ?= # --max-fill-attempts / --mfa
 MAX_RELEVANCE_LLM_CHECKS ?= # --max-relevance-llm-checks / --mrlc
-NUM_CTX             ?= # --num-ctx / --nc
-NUM_PREDICT         ?= # --num-predict / --np
+ASSISTANT_NUM_CTX   ?= # --assistant-num-ctx / --anc
+ROBOT_NUM_CTX       ?= # --robot-num-ctx / --rnc
+ASSISTANT_NUM_PREDICT ?= # --assistant-num-predict / --anp
+ROBOT_NUM_PREDICT   ?= # --robot-num-predict / --rnp
 ROBOT_TEMP          ?= # --robot-temp / --rt
 ASSISTANT_TEMP      ?= # --assistant-temp / --at
 ROBOT_TOP_P         ?= # --robot-top-p / --rtp
@@ -31,6 +33,7 @@ LOG_LEVEL           ?= # --log-level / --ll
 LOG_FILE            ?= # --log-file / --lf
 LOG_CONSOLE         ?= # --log-console / --lc
 NO_AUTO_SEARCH      ?= # --no-auto-search / --nas
+FORCE_SEARCH        ?= # --force-search / --fs
 EMBEDDING_MODEL     ?= # --embedding-model / --em
 EMBEDDING_SIMILARITY_THRESHOLD ?= # --embedding-similarity-threshold / --est
 EMBEDDING_HISTORY_DECAY ?= # --embedding-history-decay / --ehd
@@ -44,8 +47,10 @@ EXTRA_ARGS += $(if $(MAX_CONTEXT_TURNS), --max-context-turns $(MAX_CONTEXT_TURNS
 EXTRA_ARGS += $(if $(MAX_FOLLOWUP_SUGGESTIONS), --max-followup-suggestions $(MAX_FOLLOWUP_SUGGESTIONS))
 EXTRA_ARGS += $(if $(MAX_FILL_ATTEMPTS), --max-fill-attempts $(MAX_FILL_ATTEMPTS))
 EXTRA_ARGS += $(if $(MAX_RELEVANCE_LLM_CHECKS), --max-relevance-llm-checks $(MAX_RELEVANCE_LLM_CHECKS))
-EXTRA_ARGS += $(if $(NUM_CTX), --num-ctx $(NUM_CTX))
-EXTRA_ARGS += $(if $(NUM_PREDICT), --num-predict $(NUM_PREDICT))
+EXTRA_ARGS += $(if $(ASSISTANT_NUM_CTX), --assistant-num-ctx $(ASSISTANT_NUM_CTX))
+EXTRA_ARGS += $(if $(ROBOT_NUM_CTX), --robot-num-ctx $(ROBOT_NUM_CTX))
+EXTRA_ARGS += $(if $(ASSISTANT_NUM_PREDICT), --assistant-num-predict $(ASSISTANT_NUM_PREDICT))
+EXTRA_ARGS += $(if $(ROBOT_NUM_PREDICT), --robot-num-predict $(ROBOT_NUM_PREDICT))
 EXTRA_ARGS += $(if $(ROBOT_TEMP), --robot-temp $(ROBOT_TEMP))
 EXTRA_ARGS += $(if $(ASSISTANT_TEMP), --assistant-temp $(ASSISTANT_TEMP))
 EXTRA_ARGS += $(if $(ROBOT_TOP_P), --robot-top-p $(ROBOT_TOP_P))
@@ -64,6 +69,7 @@ EXTRA_ARGS += $(if $(LOG_FILE), --log-file "$(LOG_FILE)")
 EXTRA_ARGS += $(if $(filter 0 false FALSE no NO off OFF,$(LOG_CONSOLE)), --no-log-console)
 # Treat only common truthy values as enabling the flag; plain "0" or empty will not
 EXTRA_ARGS += $(if $(filter 1 true TRUE yes YES on ON,$(NO_AUTO_SEARCH)), --no-auto-search)
+EXTRA_ARGS += $(if $(filter 1 true TRUE yes YES on ON,$(FORCE_SEARCH)), --force-search)
 EXTRA_ARGS += $(if $(EMBEDDING_MODEL), --embedding-model $(EMBEDDING_MODEL))
 EXTRA_ARGS += $(if $(EMBEDDING_SIMILARITY_THRESHOLD), --embedding-similarity-threshold $(EMBEDDING_SIMILARITY_THRESHOLD))
 EXTRA_ARGS += $(if $(EMBEDDING_HISTORY_DECAY), --embedding-history-decay $(EMBEDDING_HISTORY_DECAY))
@@ -81,6 +87,9 @@ venv: ## Create local virtualenv at .venv if missing
 
 install: venv ## Install project dependencies
 	@$(PIP) install -r requirements.txt
+
+install-dev: venv ## Install runtime and dev dependencies (pinned by constraints)
+	@$(PIP) install -r requirements.txt -r requirements-dev.txt
 
 dev-setup: install pull-model ## Install deps and pull the default model
 
@@ -108,7 +117,7 @@ run-no-search: ## One-shot w/o web search: make run-no-search QUESTION="Derive t
 # make run-search QUESTION="Capital of France?" MAX_ROUNDS=1 SEARCH_MAX_RESULTS=2 DDG_BACKEND=duckduckgo LOG_LEVEL=INFO
 run-search: ## One-shot with web search
 	@test -n "$(QUESTION)" || { echo "Provide QUESTION=\"...\""; exit 1; }
-	@$(PY) -m src.main --model $(MODEL) --question "$(QUESTION)" $(EXTRA_ARGS)
+	@$(PY) -m src.main --model $(MODEL) --force-search --question "$(QUESTION)" $(EXTRA_ARGS)
 
 check-ollama: ## Check Ollama server and list local models
 	@$(CURL) http://localhost:11434/api/tags | head -c 400 && echo || { echo "Ollama not responding on :11434"; exit 1; }
