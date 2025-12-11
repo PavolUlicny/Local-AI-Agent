@@ -338,7 +338,50 @@ Ensure you have downloaded the Ollama runtime using the [tutorial above](#ollama
 sudo apt update && sudo apt install -y python3-venv
 ```
 
-- Project install:
+Recommended automated install
+
+Use the bundled installer script to create the `.venv`, install dependencies, and (by default) pull the Ollama models:
+
+In one terminal:
+
+```bash
+ollama serve
+```
+
+In another terminal:
+
+```bash
+# Linux
+git clone https://github.com/PavolUlicny/Local-AI-Agent.git
+cd Local-AI-Agent
+python3 -m scripts.install_deps
+source .venv/bin/activate
+
+# Windows (Python 3.12)
+git clone https://github.com/PavolUlicny/Local-AI-Agent.git
+cd Local-AI-Agent
+python -m scripts.install_deps
+.\.venv\Scripts\activate
+```
+
+Extra Options:
+
+```bash
+# Install only runtime deps (skip dev requirements)
+python3 -m scripts.install_deps --runtime-only
+
+# Skip pulling Ollama models (pulls are enabled by default)
+python3 -m scripts.install_deps --no-pull-models
+
+# You can also run the script directly:
+python3 scripts/install_deps.py
+```
+
+Note: the installer will attempt to pull Ollama models by default. If the `ollama` CLI is not
+available on your PATH the script will print a warning and skip pulling models — install Ollama
+first if you want the models downloaded automatically.
+
+Manual install (legacy)
 
 In one terminal:
 
