@@ -26,7 +26,8 @@ def run(cmd: Sequence[str]) -> None:
 def venv_python() -> Path:
     """Return the venv's python path for POSIX/Windows."""
     bin_dir = "Scripts" if os.name == "nt" else "bin"
-    return VENV_DIR / bin_dir / "python"
+    exe_name = "python.exe" if os.name == "nt" else "python"
+    return VENV_DIR / bin_dir / exe_name
 
 
 def ensure_venv(python_exe: str) -> Path:
