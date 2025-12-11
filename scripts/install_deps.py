@@ -60,10 +60,11 @@ def pull_models(models: Sequence[str]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    default_python = "python" if os.name == "nt" else sys.executable
     parser.add_argument(
         "--python",
-        default=sys.executable,
-        help="Python interpreter used to create the venv (default: current)",
+        default=default_python,
+        help=("Python interpreter used to create the venv (default: current; " "on Windows this defaults to 'python')"),
     )
     parser.add_argument(
         "--runtime-only",
