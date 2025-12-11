@@ -71,9 +71,12 @@ High‑level components and their roles:
 | Prompts (`prompts.py`) | Structured templates for each decision/action stage. |
 | Robot LLM (low temp) | Deterministic classifiers & planners (search decision, relevance, query planning). |
 | Assistant LLM (higher temp) | Final natural‑language answer synthesis. |
-| Search Wrapper | DDGS metasearch (DuckDuckGo/Bing/etc.) with backoff & retries. |
-| Topic Manager (`helpers.Topic`) | Maintains per-topic turns & evolving keyword set. |
-| Keyword Utilities | Tokenization, stopword filtering, heuristic numeric filtering. |
+| Search Client (`search_client.SearchClient`) | DDGS metasearch with retry/backoff and normalized result payloads. |
+| Search Orchestrator (`search_orchestrator.SearchOrchestrator`) | Coordinates the pending-query loop, deduplication, planning, and fill cycles. |
+| Topic Manager (`topic_manager.TopicManager`) | Maintains per-topic turns, keyword sets, and blended embeddings. |
+| Embedding Client (`embedding_client.EmbeddingClient`) | Provides cached, fault-tolerant access to Ollama embeddings. |
+| Keyword/Text Utilities (`keywords.py`, `text_utils.py`) | Tokenization, regex validation, truncation, context/time formatting. |
+| URL & Topic Utilities (`url_utils.py`, `topic_utils.py`) | URL canonicalization plus cosine similarity, tail turns, and topic briefs. |
 | Rebuild Logic | Detects context length errors and rebuilds prompt chains with reduced parameters. |
 
 Note: Robot and Assistant both use the same base model specified via `--model`, but with different temperatures and decoding parameters tailored to their roles.
@@ -89,7 +92,14 @@ Local-AI-Agent/
 │  ├─ agent.py          # Orchestration: context, search, response
 │  ├─ chains.py         # LLM instances and prompt chains
 │  ├─ prompts.py        # Prompt templates (LangChain compatible)
-│  ├─ helpers.py        # Utilities: keywords, truncation, URLs, topics
+│  ├─ search_client.py  # DDGS wrapper with retries + normalization
+│  ├─ embedding_client.py  # Safe embedding access + caching
+│  ├─ search_orchestrator.py  # Pending-query loop, dedup, fill logic
+│  ├─ topic_manager.py  # Topic lifecycle, keyword/embedding updates
+│  ├─ text_utils.py     # Truncation, regex validation, datetime helpers
+│  ├─ keywords.py       # Tokenization, keyword extraction, follow-up checks
+│  ├─ topic_utils.py    # Topic dataclasses, similarity math, turn helpers
+│  ├─ url_utils.py      # URL canonicalization for dedupe
 │  └─ exceptions.py     # ResponseError typing
 ├─ scripts/
 │  └─ smoke.py          # No-network smoke check used by CI
@@ -151,13 +161,41 @@ Builds the LangChain components: two `OllamaLLM` instances (robot/assistant) and
 
 Resolves `PromptTemplate` for a range of LangChain versions (searches multiple import paths), then declares immutable templates governing output constraints and permissible phrasing. Each template enforces strict, minimal surface (e.g., plain YES/NO tokens) to simplify downstream validation.
 
-### `src/helpers.py`
-
-Utility layer: tokenization, stopword & numeric heuristic filtering, context/date formatting, URL canonicalization, keyword extraction, truncation rules, topic selection logic, keyword pruning frequency pass, regex validation for constrained outputs. Houses constants controlling size budgets and caps.
-
 ### `src/agent.py`
 
-Owns the runtime orchestration: topic selection, search decision, seed generation, iterative query planning/filtering, DDGS retrieval with backoff, deduplication, truncation, answer synthesis with/without search context, interactive loop, and resilience (context‑length rebuilds). Maintains per‑stage rebuild counters.
+Owns the runtime orchestration: topic selection, search decision, seed generation, iterative query planning/filtering, search execution, truncation, answer synthesis with/without search context, interactive loop, and resilience (context‑length rebuilds). It now delegates distinct responsibilities to `SearchClient`, `SearchOrchestrator`, `EmbeddingClient`, and `TopicManager` while maintaining the overall flow and rebuild counters.
+
+### `src/search_client.py`
+
+Wraps DDGS/Brave/Bing queries with retry/backoff, timeout management, and result normalization before the orchestration loop inspects them.
+
+### `src/embedding_client.py`
+
+Encapsulates Ollama embedding lifecycle, including caching, error logging, and safe fallbacks whenever the runtime cannot return a vector.
+
+### `src/search_orchestrator.py`
+
+Contains the pending-query loop that deduplicates URLs, runs relevance filters, expands keyword sets, and triggers planning/fill passes until round budgets are satisfied.
+
+### `src/topic_manager.py`
+
+Manages topic creation/updating, keyword pruning, embedding blending, and selection bookkeeping once a turn is answered.
+
+### `src/text_utils.py`
+
+Holds truncation policies, regex validation helpers, datetime formatting, and logic for normalizing or selecting seed queries.
+
+### `src/keywords.py`
+
+Implements tokenization, stopword filtering, keyword extraction/pruning, heuristic follow-up detection, and lightweight relevance scoring.
+
+### `src/topic_utils.py`
+
+Defines the `Topic` dataclass, cosine similarity helpers, turn tail selection, topic briefs, and prior-response aggregation utilities.
+
+### `src/url_utils.py`
+
+Provides URL canonicalization helpers to support consistent deduplication hashes.
 
 ## Topic & Context Management
 
@@ -330,104 +368,125 @@ Download and run the Windows installer from the official site: [https://ollama.c
 
 ## Project installation
 
-Ensure you have downloaded the Ollama runtime using the [tutorial above](#ollama-runtime-installation) before installing this project.
+Ensure the Ollama runtime is installed first (see "Ollama runtime installation").
 
-- Linux prerequisite (Debian/Ubuntu): install `python3-venv` so you can create virtual environments:
+Prerequisites
+
+- Debian/Ubuntu: install the system venv helper so the installer can create `.venv`:
 
 ```bash
 sudo apt update && sudo apt install -y python3-venv
 ```
 
-Recommended automated install
+Automated install (recommended)
 
-Use the bundled installer script to create the `.venv`, install dependencies, and (by default) pull the Ollama models:
+The repository includes `scripts/install_deps.py`, a small installer that:
 
-In one terminal:
+- creates a local virtual environment at `.venv`;
+- installs runtime dependencies from `requirements.txt` (and dev deps by default);
+- optionally pulls Ollama models (defaults: `cogito:8b` and `embeddinggemma:300m`).
+
+Start the Ollama server in one terminal:
 
 ```bash
 ollama serve
 ```
 
-In another terminal:
+Then run the installer from a second terminal (POSIX):
 
 ```bash
-# Linux
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
 python3 -m scripts.install_deps
 source .venv/bin/activate
+```
 
-# Windows (Python 3.12)
+Windows (PowerShell / cmd):
+
+```powershell
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
 python -m scripts.install_deps
 .\.venv\Scripts\activate
 ```
 
-Extra Options:
+Installer options (see `scripts/install_deps.py`):
+
+- `--runtime-only`: install only `requirements.txt` (skip `requirements-dev.txt`).
+- `--no-pull-models`: do not run `ollama pull` for any models.
+- `--model` / `--embedding-model`: override which models to pull.
+- `--python`: choose a different Python executable to create the venv.
+
+Examples:
 
 ```bash
-# Install only runtime deps (skip dev requirements)
+# Install runtime deps only
 python3 -m scripts.install_deps --runtime-only
 
-# Skip pulling Ollama models (pulls are enabled by default)
+# Install deps but do not pull models
 python3 -m scripts.install_deps --no-pull-models
 
-# You can also run the script directly:
-python3 scripts/install_deps.py
+# Pull different models
+python3 -m scripts.install_deps --model "llama3:8b" --embedding-model "embeddinggemma:300m"
 ```
 
-Note: the installer will attempt to pull Ollama models by default. If the `ollama` CLI is not
-available on your PATH the script will print a warning and skip pulling models — install Ollama
-first if you want the models downloaded automatically.
+Notes about model pulls
 
-Manual install (legacy)
+- The installer will call `ollama pull` for the main model and the embedding model unless
+  you pass `--no-pull-models`. If the `ollama` CLI is not on your `PATH` the script prints a
+  warning and skips pulls so the installer still succeeds.
 
-In one terminal:
+Manual install (alternative)
+
+If you prefer to set up the environment manually:
 
 ```bash
+# Start Ollama in a separate terminal
 ollama serve
-```
 
-In another terminal:
-
-- Linux:
-
-```bash
+# Create and activate venv (POSIX)
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -U pip
-pip install -r requirements.txt
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+
+# Pull recommended models (optional)
 ollama pull cogito:8b
 ollama pull embeddinggemma:300m
 ```
 
-- Windows (tested only using Python 3.12):
+Windows manual (PowerShell / cmd):
 
-```bash
+```powershell
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install -U pip
-pip install -r requirements.txt
+python -m pip install -U pip
+python -m pip install -r requirements.txt
 ollama pull cogito:8b
 ollama pull embeddinggemma:300m
 ```
 
-For development tooling (ruff, mypy, pytest, pre-commit), install the pinned dev set too:
+Development dependencies
+
+By default `scripts/install_deps.py` installs dev dependencies as well. To explicitly install
+dev tooling after creating the venv:
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
-# or: make install-dev
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
 ```
 
-Notes:
+Clarifications
 
-- The Python package `ollama` in `requirements.txt` is only used for optional exception typing. LangChain communicates with the Ollama server directly; the pip package is not strictly required at runtime if the server is available (keeping it installed is harmless).
-- If you swap embedding models, update `--embedding-model` (or `EMBEDDING_MODEL` in the Makefile) and pull it once via `ollama pull <model>` so the semantic memory checks can initialize.
+- The `ollama` package listed in `requirements.txt` is optional at runtime — the agent talks to
+  the Ollama server over its HTTP API; keeping the package installed is harmless and can help with
+  some local integrations.
+- If you change embedding models, update the `--embedding-model` flag (or the `EMBEDDING_MODEL`
+  variable in the Makefile) and `ollama pull` the model so the embedding-based features initialize.
 
 ## Quick Start Examples
 
@@ -586,7 +645,7 @@ Windows:
 python -m scripts.smoke
 ```
 
-- Pytest suite (helpers + mocked agent flow):
+- Pytest suite (unit utilities + agent orchestration):
 
 ```bash
 pytest
