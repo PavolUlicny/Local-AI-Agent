@@ -3,8 +3,6 @@ from __future__ import annotations
 import dataclasses
 import sys
 
-import ddgs
-
 
 def main() -> int:
     # Ensure project root on path if executed directly
@@ -15,6 +13,7 @@ def main() -> int:
         from src.cli import build_arg_parser
         from src.config import AgentConfig
         from src.agent import Agent
+        from src.search_client import SearchClient
     except ModuleNotFoundError as e:  # pragma: no cover - CI discovery failure
         missing_root = getattr(e, "name", "").split(".")[0]
         if missing_root != "src":
@@ -85,13 +84,15 @@ def main() -> int:
             print("LLM_PARAM_MISMATCH: ctx/predict not applied")
             return 1
 
-        # 5) DDGS search client instantiated
+        # 5) Search client instantiated (wrapper around DDGS)
         if not hasattr(agent, "search_client"):
             print("SEARCH_WRAPPER_MISSING: search client attribute absent")
             return 1
-        if not isinstance(agent.search_client, ddgs.DDGS):
-            print("SEARCH_WRAPPER_MISMATCH: search client not DDGS")
-            return 1
+        if not isinstance(agent.search_client, SearchClient):
+            # Fallback: allow duck-typed client with a `fetch` method
+            if not hasattr(agent.search_client, "fetch"):
+                print("SEARCH_WRAPPER_MISMATCH: search client missing 'fetch' method")
+                return 1
 
         print("SMOKE_OK")
         return 0
