@@ -639,7 +639,7 @@ class Agent:
             logging.error(f"Answer generation failed unexpectedly: {exc}")
             self._mark_error("Answer generation failed unexpectedly; see logs for details.")
             return None
-        if self._is_tty:
+        if ANSI is not None and self._is_tty:
             self._writeln("\n\033[91m[Answer]\033[0m")
         else:
             self._writeln("\n[Answer]")
