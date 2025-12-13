@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   smoke:
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -26,19 +26,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Upgrade pip and install dependencies (runtime + dev)
+      - name: Create venv and install dependencies (runtime + dev)
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -r requirements.txt -r requirements-dev.txt
+          # Use the repository install helper; avoid pulling models in CI
+          python -m scripts.install_deps --no-pull-models
 
       - name: Run pre-commit hooks
         run: |
-          pre-commit run --all-files --show-diff-on-failure
+          .venv/bin/pre-commit run --all-files --show-diff-on-failure
 
       - name: Run smoke test (no network calls)
         run: |
-          python -m scripts.smoke
+          .venv/bin/python -m scripts.smoke
 
       - name: Pytest suite
         run: |
-          pytest
+          .venv/bin/pytest
