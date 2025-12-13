@@ -118,7 +118,7 @@ def test_fatal_error_bubbles_via_last_error(monkeypatch: pytest.MonkeyPatch) -> 
 
     class ErrorChain(DummyChain):
         def stream(self, inputs: dict[str, Any]):  # noqa: D401, ANN001
-            raise agent_module.ResponseError("model not found")
+            raise agent_module.ResponseError("assistant model not found")
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
@@ -140,7 +140,8 @@ def test_fatal_error_bubbles_via_last_error(monkeypatch: pytest.MonkeyPatch) -> 
     result = agent.answer_once("Hola?")
 
     assert result is None
-    assert agent._last_error is not None and "not found" in agent._last_error
+    expected = f"Assistant model '{agent.cfg.assistant_model}' not found. Run 'ollama pull {agent.cfg.assistant_model}' and retry."
+    assert agent._last_error == expected
 
 
 def test_force_search_skips_classifier(monkeypatch: pytest.MonkeyPatch) -> None:
