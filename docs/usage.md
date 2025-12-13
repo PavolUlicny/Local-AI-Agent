@@ -56,18 +56,43 @@ Adjust `--num-ctx` and `--num-predict` according to the model's capabilities.
 
 ## Quick Start Examples
 
-Interactive session:
+### Interactive session
 
 ```bash
 # Linux
 python3 -m src.main
+```
 
-# One-shot
+```powershell
+# Windows (PowerShell / cmd)
+python -m src.main
+```
+
+### One-shot (single question)
+
+```bash
+# Linux
 python3 -m src.main --question "Explain the difference between variance and standard deviation"
+```
 
-# One-shot without search
+```powershell
+# Windows (PowerShell / cmd)
+python -m src.main --question "Explain the difference between variance and standard deviation"
+```
+
+### One-shot without search
+
+```bash
+# Linux
 python3 -m src.main --no-auto-search --question "Derive the quadratic formula"
 ```
+
+```powershell
+# Windows (PowerShell / cmd)
+python -m src.main --no-auto-search --question "Derive the quadratic formula"
+```
+
+Windows users: the `Makefile` targets are primarily for Unix-like shells; on Windows use the direct `python -m src.main` commands shown above, or run the Makefile under Git Bash / WSL if you prefer `make` helpers.
 
 ## Performance Considerations
 
