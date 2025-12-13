@@ -24,8 +24,12 @@ def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
     assistant_ctx = cfg.assistant_num_ctx
     robot_predict = cfg.robot_num_predict
     assistant_predict = cfg.assistant_num_predict
+    # use the explicitly configured role models
+    robot_model_name = cfg.robot_model
+    assistant_model_name = cfg.assistant_model
+
     llm_robot = OllamaLLM(
-        model=cfg.model,
+        model=robot_model_name,
         temperature=cfg.robot_temp,
         top_p=cfg.robot_top_p,
         top_k=cfg.robot_top_k,
@@ -34,7 +38,7 @@ def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
         num_ctx=robot_ctx,
     )
     llm_assistant = OllamaLLM(
-        model=cfg.model,
+        model=assistant_model_name,
         temperature=cfg.assistant_temp,
         top_p=cfg.assistant_top_p,
         top_k=cfg.assistant_top_k,
