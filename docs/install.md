@@ -17,6 +17,12 @@ Download and run the Windows installer from the official site: [ollama.com](http
 
 Ensure the Ollama runtime is installed first.
 
+### Python version (required)
+
+**Important:** This project is confirmed to run on **Python 3.12** (tested in CI). Use Python 3.12 when creating the virtual environment and running the installer. On systems with multiple Python versions, invoke the installer with `python3.12 -m scripts.install_deps` (Linux/macOS) or `python -m scripts.install_deps` where `python` points to a Python 3.12 interpreter on Windows. You can also pass `--python python3.12` to the installer to explicitly select the interpreter.
+
+Other Python versions (for example, 3.10–3.11 or future releases) are untested and may produce installation or runtime errors.
+
 ### Prerequisites
 
 - Debian/Ubuntu: install the system venv helper so the installer can create `.venv`:
@@ -146,7 +152,7 @@ Recommended: 25+ GB combined memory for smoother context handling and reduced sw
 Notes:
 
 - More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
-- Python: tested in CI with Python 3.12. Earlier 3.10–3.11 may work but are not guaranteed.
+- Python: Confirmed to run on Python 3.12 (tested in CI). Other Python versions (for example, 3.10–3.11 or future releases) are untested and not guaranteed to work.
 - OS: Linux is expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
 - If running CPU‑only, ensure fast SSD swap; avoid paging spikes by lowering `--num-predict` if memory pressure appears.
 - Smaller GPUs (≤4 GB VRAM) can still run but may force model quantization or offload; keep expectations modest.
