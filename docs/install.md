@@ -11,7 +11,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 ### Windows
 
-Download and run the Windows installer from the official site: https://ollama.com
+Download and run the Windows installer from the official site: [ollama.com](https://ollama.com)
 
 ## Project installation
 
@@ -39,7 +39,7 @@ Start the Ollama server in one terminal:
 ollama serve
 ```
 
-Then run the installer from a second terminal (POSIX):
+Then run the installer from a second terminal (Linux):
 
 ```bash
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
@@ -91,7 +91,7 @@ If you prefer to set up the environment manually:
 # Start Ollama in a separate terminal
 ollama serve
 
-# Create and activate venv (POSIX)
+# Create and activate venv (Linux)
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
 python3 -m venv .venv
@@ -136,3 +136,17 @@ ollama serve
 make install-deps
 source .venv/bin/activate
 ```
+
+## System Requirements
+
+Minimum: Combined GPU VRAM + system RAM of at least 20 GB. Examples: 16 GB RAM + 4 GB VRAM, or 20 GB RAM CPU‑only (may rely on swap; expect slower inference).
+
+Recommended: 25+ GB combined memory for smoother context handling and reduced swapping. Examples: 16 GB RAM + 10 GB VRAM, 32 GB RAM CPU‑only, or 24 GB RAM + 8 GB VRAM.
+
+Notes:
+
+- More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
+- Python: tested in CI with Python 3.12. Earlier 3.10–3.11 may work but are not guaranteed.
+- OS: Linux is expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
+- If running CPU‑only, ensure fast SSD swap; avoid paging spikes by lowering `--num-predict` if memory pressure appears.
+- Smaller GPUs (≤4 GB VRAM) can still run but may force model quantization or offload; keep expectations modest.

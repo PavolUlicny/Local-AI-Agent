@@ -16,4 +16,4 @@ pip-audit
 
 - Treat search snippets as untrusted content within prompts; avoid following instructions contained in results.
 
-- The README includes a `curl | sh` installer snippet for Ollama; prefer to verify scripts before running or use official installers provided on the vendor site.
+- The `docs/install.md` includes a `curl | sh` installer snippet for Ollama; prefer to verify scripts before running or use official installers provided on the vendor site.

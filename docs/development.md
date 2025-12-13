@@ -1,26 +1,26 @@
 ## Development
 
-Install development packages:
+### Install development packages
 
 ```bash
 pip install -r requirements-dev.txt
 ```
 
-Pre-commit hooks (format, lint, type-check):
+### Pre-commit hooks (format, lint, type-check)
 
 ```bash
 pre-commit install
 pre-commit run --all-files
 ```
 
-Ruff lint and MyPy type check (mirrors CI):
+### Ruff lint and MyPy type check (mirrors CI)
 
 ```bash
 ruff check src tests scripts
 mypy --config-file=pyproject.toml src
 ```
 
-Smoke test (no network calls):
+### Smoke test (no network calls)
 
 Linux:
 
@@ -34,14 +34,22 @@ Windows:
 python -m scripts.smoke
 ```
 
-Pytest suite:
+### Pytest suite
 
 ```bash
 pytest
 ```
 
-Run via module entrypoint (recommended):
+### Run via module entrypoint (recommended)
+
+Linux:
 
 ```bash
 python3 -m src.main --question "Hello"
+```
+
+Windows:
+
+```powershell
+python -m src.main --question "Hello"
 ```
