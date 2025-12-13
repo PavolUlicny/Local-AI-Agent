@@ -79,7 +79,10 @@ High‑level components and their roles:
 | URL & Topic Utilities (`url_utils.py`, `topic_utils.py`) | URL canonicalization plus cosine similarity, tail turns, and topic briefs. |
 | Rebuild Logic | Detects context length errors and rebuilds prompt chains with reduced parameters. |
 
-Note: Robot and Assistant both use the same base model specified via `--model`, but with different temperatures and decoding parameters tailored to their roles.
+Note: Robot and Assistant can use distinct models via `--robot-model` and `--assistant-model` (for
+example, a smaller/faster model for planning/classification and a higher-quality one for final
+answers). If either role-specific flag is omitted, the CLI uses the configured default model for
+that role (both default to `cogito:8b`).
 
 ## Project Structure
 
@@ -241,7 +244,6 @@ Provides URL canonicalization helpers to support consistent deduplication hashes
 
 | Flag | Short | Default | Description |
 | ------ | ------- | --------- | ------------- |
-| `--model` | `--m` | `cogito:8b` | Ollama model name/tag. |
 | `--no-auto-search` | `--nas` | off | Force NO_SEARCH unless logic changed manually. |
 | `--force-search` | `--fs` | off | Bypass classifier and always perform SEARCH for the current turn. |
 | `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds (seed + planned). |
@@ -276,23 +278,25 @@ Provides URL canonicalization helpers to support consistent deduplication hashes
 | `--embedding-history-decay` | `--ehd` | `0.65` | Weight [0-1) that keeps prior topic embeddings when blending in a new turn (lower = faster adaptation). |
 | `--embedding-result-similarity-threshold` | `--erst` | `0.5` | Semantic similarity needed for a search result to skip the LLM relevance gate. |
 | `--embedding-query-similarity-threshold` | `--eqst` | `0.3` | Minimum similarity before a planned query is passed to the LLM query filter. |
+| `--robot-model` | `--rm` | `cogito:8b` | Ollama model for robot (planning/classifier) chains. |
+| `--assistant-model` | `--am` | `cogito:8b` | Ollama model for assistant (final answer) chains. |
 
 ## Using Different Models
 
-You can substitute any Ollama model for `cogito:8b` by pulling it first and adjusting runtime parameters:
+You can substitute any Ollama model by pulling it first and passing role-specific flags. Examples:
 
 - Linux:
 
 ```bash
 ollama pull llama3:8b   # example
-python3 -m src.main --model llama3:8b
+python3 -m src.main --robot-model llama3:8b --assistant-model llama3:8b
 ```
 
 - Windows:
 
 ```bash
 ollama pull llama3:8b
-python -m src.main --model llama3:8b
+python -m src.main --robot-model llama3:8b --assistant-model llama3:8b
 ```
 
 Key adjustments when switching models:
@@ -414,7 +418,7 @@ Installer options (see `scripts/install_deps.py`):
 
 - `--runtime-only`: install only `requirements.txt` (skip `requirements-dev.txt`).
 - `--no-pull-models`: do not run `ollama pull` for any models.
-- `--model` / `--embedding-model`: override which models to pull.
+- `--robot-model` / `--assistant-model` / `--embedding-model`: override which models to pull.
 - `--python`: choose a different Python executable to create the venv.
 
 Examples:
@@ -427,7 +431,7 @@ python3 -m scripts.install_deps --runtime-only
 python3 -m scripts.install_deps --no-pull-models
 
 # Pull different models
-python3 -m scripts.install_deps --model "llama3:8b" --embedding-model "embeddinggemma:300m"
+python3 -m scripts.install_deps --robot-model "llama3:8b" --assistant-model "llama3:8b" --embedding-model "embeddinggemma:300m"
 ```
 
 Notes about model pulls
@@ -573,8 +577,9 @@ Activate the virtual environment beforehand (`.\.venv\Scripts\activate`) just li
 Install `make` if it is not already available. Then run:
 
 ```bash
-# One-time setup: create venv, install deps, pull default model
-make dev-setup MODEL=cogito:8b
+# One-time setup: create venv, install deps, pull default models
+# Example: specify both role models if you want custom choices
+make dev-setup ROBOT_MODEL=cogito:8b ASSISTANT_MODEL=cogito:8b
 
 # Start Ollama runtime (foreground)
 make serve-ollama
@@ -597,11 +602,22 @@ make check          # quick import/instantiate sanity check
 
 # Cleanup caches
 make clean
+
+### Install via project installer
+
+You can run the repository installer (`scripts/install_deps.py`) directly via Make:
+
+```bash
+# Create `.venv`, install runtime and dev deps, and pull configured Ollama models
+make install-deps
+
+# Alias (convenience)
+make bootstrap
 ```
 
 Notes:
 
-- Override `MODEL` in `make dev-setup MODEL=<name:tag>` to pull a different model.
+- Override `ROBOT_MODEL`/`ASSISTANT_MODEL` in `make dev-setup ROBOT_MODEL=<name:tag> ASSISTANT_MODEL=<name:tag>` to pull different role models.
 - `run-search` tunables: `MAX_ROUNDS`, `SEARCH_MAX_RESULTS`, `DDG_BACKEND`, `LOG_LEVEL` (inherits CLI defaults unless overridden: `12`, `5`, `auto`, `WARNING`). The target simply wires these flags through—automatic search gating still decides whether each question actually hits the web.
 - Supported DDGS backend names include `duckduckgo`, `bing`, `brave`, `google`, `mojeek`, `wikipedia`, `yahoo`, and `yandex`; use `auto` (default) to fan out across providers.
 - `NO_AUTO_SEARCH` is treated as a boolean flag. Only truthy values enable it: `1,true,TRUE,yes,YES,on,ON`. Setting `NO_AUTO_SEARCH=0` will not enable the flag.
