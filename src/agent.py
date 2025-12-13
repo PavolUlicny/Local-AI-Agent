@@ -49,6 +49,7 @@ try:
     _keywords_mod = importlib.import_module("src.keywords")
     _topic_utils_mod = importlib.import_module("src.topic_utils")
     _url_utils_mod = importlib.import_module("src.url_utils")
+    _model_utils_mod = importlib.import_module("src.model_utils")
 except ModuleNotFoundError as exc:  # fallback when imported as top-level module
     missing_root = getattr(exc, "name", "").split(".")[0]
     if missing_root != "src":
@@ -64,6 +65,7 @@ except ModuleNotFoundError as exc:  # fallback when imported as top-level module
     _keywords_mod = importlib.import_module("keywords")
     _topic_utils_mod = importlib.import_module("topic_utils")
     _url_utils_mod = importlib.import_module("url_utils")
+    _model_utils_mod = importlib.import_module("model_utils")
 
 _AgentConfig = _config.AgentConfig
 build_llms = _chains.build_llms
@@ -97,6 +99,7 @@ MAX_REBUILD_RETRIES = _text_utils_mod.MAX_REBUILD_RETRIES
 MAX_PROMPT_RECENT_TURNS = _text_utils_mod.MAX_PROMPT_RECENT_TURNS
 
 _extract_keywords = _keywords_mod._extract_keywords
+handle_missing_model = _model_utils_mod.handle_missing_model
 
 
 class Agent:
@@ -211,7 +214,7 @@ class Agent:
                 "Enter submits your message. Type 'exit' to quit.",
             ]
         )
-        if self._is_tty:
+        if ANSI is not None and self._is_tty:
             self._writeln(f"\n\033[96m{message}\033[0m")
         else:
             self._writeln(message)
@@ -419,11 +422,10 @@ class Agent:
                 question_embedding=question_embedding,
                 embedding_threshold=cfg.embedding_similarity_threshold,
             )
-        except ResponseError as exc:  # model not found, etc.
+        except ResponseError as exc:  # Robot model not found, etc.
             message = str(exc)
             if "not found" in message.lower():
-                logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                 return None
             selected_topic_index = None
             recent_history = []
@@ -473,8 +475,7 @@ class Agent:
                 should_search = decision_validated == "SEARCH"
             except ResponseError as exc:
                 if "not found" in str(exc).lower():
-                    logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                    self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                    handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                     return None
                 if _is_context_length_error(str(exc)):
                     if self.rebuild_counts["search_decision"] < MAX_REBUILD_RETRIES:
@@ -527,8 +528,7 @@ class Agent:
                 primary_search_query = _pick_seed_query(seed_text, user_query)
             except ResponseError as exc:
                 if "not found" in str(exc).lower():
-                    logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                    self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                    handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                     return None
                 if _is_context_length_error(str(exc)):
                     if self.rebuild_counts["seed"] < MAX_REBUILD_RETRIES:
@@ -611,8 +611,7 @@ class Agent:
             response_stream = chain.stream(resp_inputs)
         except ResponseError as exc:
             if "not found" in str(exc).lower():
-                logging.error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
-                self._mark_error(f"Model '{cfg.model}' not found. Run 'ollama pull {cfg.model}' and retry.")
+                handle_missing_model(self._mark_error, "Assistant", cfg.assistant_model)
                 return None
             if _is_context_length_error(str(exc)):
                 if self.rebuild_counts["answer"] < MAX_REBUILD_RETRIES:
