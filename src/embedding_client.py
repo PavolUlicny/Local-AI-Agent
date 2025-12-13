@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import List
 
 from langchain_ollama import OllamaEmbeddings
+
+try:
+    _model_utils_mod = importlib.import_module("src.model_utils")
+except ModuleNotFoundError:
+    _model_utils_mod = importlib.import_module("model_utils")
+
+handle_missing_model = _model_utils_mod.handle_missing_model
 
 
 class EmbeddingClient:
@@ -45,23 +53,26 @@ class EmbeddingClient:
         try:
             return OllamaEmbeddings(model=self.model_name)
         except Exception as exc:  # pragma: no cover - runtime specific
-            if not self._warning_logged:
-                logging.warning(
-                    "Embedding model '%s' unavailable; semantic similarity checks are disabled (%s)",
-                    self.model_name,
-                    exc,
-                )
-                self._warning_logged = True
+            # Prefer the centralized missing-model handler when the model is simply not found.
+            msg = str(exc).lower()
+            if "not found" in msg:
+                handle_missing_model(None, "Embedding", self.model_name)
+            else:
+                if not self._warning_logged:
+                    logging.warning(
+                        "Embedding model '%s' unavailable; semantic similarity checks are disabled (%s). "
+                        "If you expect this model locally run 'ollama pull %s' or check your Ollama service.",
+                        self.model_name,
+                        exc,
+                        self.model_name,
+                    )
+                    self._warning_logged = True
             return None
 
     def _log_embed_failure(self, exc: Exception) -> None:
         message = str(exc).lower()
         if "not found" in message:
-            logging.warning(
-                "Embedding model '%s' not found. Run 'ollama pull %s' to enable semantic topic tracking.",
-                self.model_name,
-                self.model_name,
-            )
+            handle_missing_model(None, "Embedding", self.model_name)
         else:
             logging.warning("Embedding generation failed (%s): %s", self.model_name, exc)
 
