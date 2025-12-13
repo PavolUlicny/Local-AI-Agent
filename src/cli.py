@@ -28,7 +28,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     defaults: "AgentConfig" = cast("type[AgentConfig]", _AgentConfig)()
 
-    parser.add_argument("--model", "--m", default=defaults.model, help="Ollama model to use")
+    parser.add_argument(
+        "--robot-model",
+        "--rm",
+        default=defaults.robot_model,
+        help="Ollama model to use for robot (planning/classifier) chains",
+    )
+    parser.add_argument(
+        "--assistant-model",
+        "--am",
+        default=defaults.assistant_model,
+        help="Ollama model to use for assistant (final answer) chains",
+    )
     parser.add_argument(
         "--no-auto-search",
         "--nas",
