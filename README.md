@@ -9,160 +9,29 @@
 3. [Core Architecture](#core-architecture)
 4. [Project Structure](#project-structure)
 5. [Execution Pipeline](#execution-pipeline)
-6. [Modules & Responsibilities](#modules--responsibilities)
-7. [Topic & Context Management](#topic--context-management)
-8. [Search Strategy & Filtering](#search-strategy--filtering)
-9. [Robustness & Error Handling](#robustness--error-handling)
-10. [CLI Arguments](#cli-arguments)
-11. [Using Different Models](#using-different-models)
-12. [System Requirements](#system-requirements)
-13. [Ollama runtime installation](#ollama-runtime-installation)
-14. [Project installation](#project-installation)
-15. [Quick Start Examples](#quick-start-examples)
-16. [Using the Makefile](#using-the-makefile)
-17. [Development](#development)
-18. [Continuous Integration (CI)](#continuous-integration-ci)
-19. [Configuration Guidelines](#configuration-guidelines)
-20. [Performance Considerations](#performance-considerations)
-21. [Troubleshooting](#troubleshooting)
-22. [Security & Safety Notes](#security--safety-notes)
-23. [Known Limitations](#known-limitations)
-24. [Contributing](#contributing)
-25. [License](#license)
-26. [Acknowledgments](#acknowledgments)
+# Local AI Agent
 
----
+An extensible, self-steering local LLM assistant that can optionally enrich answers with iterative, relevance-filtered web searches while tracking multi-topic conversational context.
 
-## Overview
+Quick start
 
-Local AI Agent runs entirely on your machine, combining an Ollama‑served model with a controlled, multi‑round search loop. It automatically decides whether a user query needs external factual grounding (SEARCH) or can be answered with general reasoning (NO_SEARCH). When in search mode, it plans, filters, and iteratively refines queries, accumulates concise result snippets, and finally synthesizes an answer that avoids leaking implementation meta‑details.
+```bash
+# Create venv, install deps, and pull configured models (recommended)
+make install-deps
 
-Design goals:
+# Start Ollama server in another terminal
+ollama serve
 
-- Deterministic, inspectable prompt chains (LangChain).
-- Conservative context growth: pruning keywords & past turns.
-- Resilience to context window overruns (automatic model parameter downscaling & chain rebuild).
-- Separation of roles: a low‑temperature "robot" model for planning/decisions; a higher‑temperature assistant for final answer generation.
-
-## Key Features
-
-- Automatic search decision (SEARCH vs NO_SEARCH) via a dedicated prompt classifier.
-- Seed query synthesis distinct from the raw user question to broaden retrieval.
-- Iterative planning of follow‑up search queries (bounded by `--max-rounds`).
-- Dual relevance filters:
-  - Lightweight keyword intersection check.
-  - LLM YES/NO validation for borderline cases (capped by `--max-relevance-llm-checks`).
-  - Semantic embedding similarity that auto-accepts high-similarity snippets before the LLM runs.
-- Query gating (LLM YES/NO) to avoid off-topic expansion, with embeddings pre-filtering clearly unrelated suggestions.
-- Result deduplication (canonicalized URLs + SHA‑256 hash of assembled title/URL/snippet).
-- Adaptive truncation of large text sections (conversation, prior answers, search corpus) with sensible cut heuristics.
-- Multi‑topic memory with keyword pruning and turn window constraints.
-- Semantic topic recall powered by configurable Ollama embeddings (defaults to `embeddinggemma:300m`).
-- Embedding-assisted relevance and query gating that skip unnecessary LLM checks when semantic similarity is decisive.
-- Automatic recovery from context length errors (progressive halving of `num_ctx` and `num_predict`).
-- One‑shot mode via `--question` (non‑interactive).
-
-## Core Architecture
-
-High‑level components and their roles:
-
-| Component | Role |
-| ----------- | ------ |
-| Prompts (`prompts.py`) | Structured templates for each decision/action stage. |
-| Robot LLM (low temp) | Deterministic classifiers & planners (search decision, relevance, query planning). |
-| Assistant LLM (higher temp) | Final natural‑language answer synthesis. |
-| Search Client (`search_client.SearchClient`) | DDGS metasearch with retry/backoff and normalized result payloads. |
-| Search Orchestrator (`search_orchestrator.SearchOrchestrator`) | Coordinates the pending-query loop, deduplication, planning, and fill cycles. |
-| Topic Manager (`topic_manager.TopicManager`) | Maintains per-topic turns, keyword sets, and blended embeddings. |
-| Embedding Client (`embedding_client.EmbeddingClient`) | Provides cached, fault-tolerant access to Ollama embeddings. |
-| Keyword/Text Utilities (`keywords.py`, `text_utils.py`) | Tokenization, regex validation, truncation, context/time formatting. |
-| URL & Topic Utilities (`url_utils.py`, `topic_utils.py`) | URL canonicalization plus cosine similarity, tail turns, and topic briefs. |
-| Rebuild Logic | Detects context length errors and rebuilds prompt chains with reduced parameters. |
-
-Note: Robot and Assistant can use distinct models via `--robot-model` and `--assistant-model` (for
-example, a smaller/faster model for planning/classification and a higher-quality one for final
-answers). If either role-specific flag is omitted, the CLI uses the configured default model for
-that role (both default to `cogito:8b`).
-
-## Project Structure
-
-```text
-Local-AI-Agent/
-├─ src/
-│  ├─ main.py           # Entry-point (`python -m src.main`)
-│  ├─ cli.py            # CLI args + logging setup
-│  ├─ config.py         # `AgentConfig` dataclass and defaults
-│  ├─ agent.py          # Orchestration: context, search, response
-│  ├─ chains.py         # LLM instances and prompt chains
-│  ├─ prompts.py        # Prompt templates (LangChain compatible)
-│  ├─ search_client.py  # DDGS wrapper with retries + normalization
-│  ├─ embedding_client.py  # Safe embedding access + caching
-│  ├─ search_orchestrator.py  # Pending-query loop, dedup, fill logic
-│  ├─ topic_manager.py  # Topic lifecycle, keyword/embedding updates
-│  ├─ text_utils.py     # Truncation, regex validation, datetime helpers
-│  ├─ keywords.py       # Tokenization, keyword extraction, follow-up checks
-│  ├─ topic_utils.py    # Topic dataclasses, similarity math, turn helpers
-│  ├─ url_utils.py      # URL canonicalization for dedupe
-│  └─ exceptions.py     # ResponseError typing
-├─ scripts/
-│  └─ smoke.py          # No-network smoke check used by CI
-├─ .github/workflows/ci.yml  # Lint, type-check, smoke in CI
-├─ .pre-commit-config.yaml   # Local hooks: ruff, format, mypy, basics
-├─ pyproject.toml       # ruff + mypy config
-├─ requirements.txt     # dependency bounds
-├─ Makefile             # helpful dev/run shortcuts
-└─ README.md            # this file
+# Activate venv and run one-shot
+source .venv/bin/activate
+python -m src.main --question "Hello"
 ```
 
-## Execution Pipeline
+Documentation
 
-```text
-User Input
- │
- ├─► Context Classification (FOLLOW_UP / EXPAND / NEW_TOPIC)
- │       Select / create topic; gather recent turns & prior answers
- │
- ├─► Search Decision (SEARCH / NO_SEARCH)
- │       If NO_SEARCH → Answer directly
- │       If SEARCH → proceed
- │
- ├─► Seed Query Generation
- │
- ├─► Iterative Round Loop (≤ max-rounds)
- │       ├─► Execute Search (DDGS text search, N results)
- │       ├─► Result Relevance Filter (keyword heuristic + LLM YES/NO)
- │       ├─► Keyword Expansion & Dedup
- │       ├─► Planning Prompt (propose new queries)
- │       ├─► Query Filter Prompt (gate each candidate YES/NO)
- │       ├─► Optional Fill Attempts (extra planning cycles) to fill remaining query slots
- │       └─► Round Accounting: A round counts only if ≥1 result for that query is accepted; queries yielding 0 accepted results are dropped without consuming the round budget.
- │
- ├─► Aggregate & Truncate Results
- │
- └─► Final Answer Prompt (with or without search context)
-```
+Full documentation has been moved to the `docs/` folder. See `docs/index.md` for a table of contents and detailed guides (installation, architecture, usage, development, CI, security, troubleshooting, and contributing).
 
-## Modules & Responsibilities
-
-### `src/main.py`
-
-Thin entry point that wires CLI args to the `Agent` and starts execution. It delegates logging setup to `cli.py`, configuration to `config.py`, chain construction to `chains.py`, and the full runtime/search orchestration to `agent.py`.
-
-### `src/cli.py`
-
-Defines the command‑line interface (arguments, defaults) and logging configuration.
-
-### `src/config.py`
-
-Holds the `AgentConfig` dataclass with all tunable parameters. Provides a convenience property for `auto_search_decision`.
-
-### `src/chains.py`
-
-Builds the LangChain components: two `OllamaLLM` instances (robot/assistant) and the prompt pipelines for each stage using `PromptTemplate | LLM | StrOutputParser`.
-
-### `src/prompts.py`
-
-Resolves `PromptTemplate` for a range of LangChain versions (searches multiple import paths), then declares immutable templates governing output constraints and permissible phrasing. Each template enforces strict, minimal surface (e.g., plain YES/NO tokens) to simplify downstream validation.
+License: MIT — see `LICENSE` for full text.
 
 ### `src/agent.py`
 
