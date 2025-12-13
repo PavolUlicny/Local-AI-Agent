@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class AgentConfig:
-    model: str = "cogito:8b"
     no_auto_search: bool = False
     force_search: bool = False
     max_rounds: int = 12
@@ -40,6 +39,8 @@ class AgentConfig:
     embedding_history_decay: float = 0.65
     embedding_result_similarity_threshold: float = 0.5
     embedding_query_similarity_threshold: float = 0.3
+    robot_model: str = "cogito:8b"
+    assistant_model: str = "cogito:8b"
 
     @property
     def auto_search_decision(self) -> bool:
