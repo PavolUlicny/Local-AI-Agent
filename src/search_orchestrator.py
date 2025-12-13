@@ -19,6 +19,7 @@ from src.text_utils import (
     _truncate_text,
 )
 from src.url_utils import _canonicalize_url
+from src.model_utils import handle_missing_model
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.config import AgentConfig
@@ -159,14 +160,7 @@ class SearchOrchestrator:
                             relevance_llm_checks += 1
                         except ResponseError as exc:  # pragma: no cover - network/model specific
                             if "not found" in str(exc).lower():
-                                logging.error(
-                                    "Model '%s' not found. Run 'ollama pull %s' and retry.",
-                                    self.cfg.model,
-                                    self.cfg.model,
-                                )
-                                self._mark_error(
-                                    f"Model '{self.cfg.model}' not found. Run 'ollama pull {self.cfg.model}' and retry."
-                                )
+                                handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                                 raise SearchAbort from exc
                             if _is_context_length_error(str(exc)):
                                 if self._rebuild_counts["relevance"] < MAX_REBUILD_RETRIES:
@@ -250,14 +244,7 @@ class SearchOrchestrator:
                     )
                 except ResponseError as exc:  # pragma: no cover - network/model specific
                     if "not found" in str(exc).lower():
-                        logging.error(
-                            "Model '%s' not found. Run 'ollama pull %s' and retry.",
-                            self.cfg.model,
-                            self.cfg.model,
-                        )
-                        self._mark_error(
-                            f"Model '{self.cfg.model}' not found. Run 'ollama pull {self.cfg.model}' and retry."
-                        )
+                        handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                         raise SearchAbort from exc
                     if _is_context_length_error(str(exc)):
                         if self._rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
@@ -325,14 +312,7 @@ class SearchOrchestrator:
                         )
                     except ResponseError as exc:  # pragma: no cover - network/model specific
                         if "not found" in str(exc).lower():
-                            logging.error(
-                                "Model '%s' not found. Run 'ollama pull %s' and retry.",
-                                self.cfg.model,
-                                self.cfg.model,
-                            )
-                            self._mark_error(
-                                f"Model '{self.cfg.model}' not found. Run 'ollama pull {self.cfg.model}' and retry."
-                            )
+                            handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                             raise SearchAbort from exc
                         if _is_context_length_error(str(exc)):
                             if self._rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
@@ -436,14 +416,7 @@ class SearchOrchestrator:
                 )
             except ResponseError as exc:  # pragma: no cover - network/model specific
                 if "not found" in str(exc).lower():
-                    logging.error(
-                        "Model '%s' not found. Run 'ollama pull %s' and retry.",
-                        self.cfg.model,
-                        self.cfg.model,
-                    )
-                    self._mark_error(
-                        f"Model '{self.cfg.model}' not found. Run 'ollama pull {self.cfg.model}' and retry."
-                    )
+                    handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                     raise SearchAbort from exc
                 if _is_context_length_error(str(exc)):
                     if self._rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
@@ -511,14 +484,7 @@ class SearchOrchestrator:
                     )
                 except ResponseError as exc:  # pragma: no cover - network/model specific
                     if "not found" in str(exc).lower():
-                        logging.error(
-                            "Model '%s' not found. Run 'ollama pull %s' and retry.",
-                            self.cfg.model,
-                            self.cfg.model,
-                        )
-                        self._mark_error(
-                            f"Model '{self.cfg.model}' not found. Run 'ollama pull {self.cfg.model}' and retry."
-                        )
+                        handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                         raise SearchAbort from exc
                     if _is_context_length_error(str(exc)):
                         if self._rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
