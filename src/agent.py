@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from src.config import AgentConfig
 
 try:
-    _config = importlib.import_module("src.config")
     _chains = importlib.import_module("src.chains")
     _exceptions = importlib.import_module("src.exceptions")
     _search_client_mod = importlib.import_module("src.search_client")
@@ -48,13 +47,11 @@ try:
     _text_utils_mod = importlib.import_module("src.text_utils")
     _keywords_mod = importlib.import_module("src.keywords")
     _topic_utils_mod = importlib.import_module("src.topic_utils")
-    _url_utils_mod = importlib.import_module("src.url_utils")
     _model_utils_mod = importlib.import_module("src.model_utils")
 except ModuleNotFoundError as exc:  # fallback when imported as top-level module
     missing_root = getattr(exc, "name", "").split(".")[0]
     if missing_root != "src":
         raise
-    _config = importlib.import_module("config")
     _chains = importlib.import_module("chains")
     _exceptions = importlib.import_module("exceptions")
     _search_client_mod = importlib.import_module("search_client")
@@ -64,56 +61,21 @@ except ModuleNotFoundError as exc:  # fallback when imported as top-level module
     _text_utils_mod = importlib.import_module("text_utils")
     _keywords_mod = importlib.import_module("keywords")
     _topic_utils_mod = importlib.import_module("topic_utils")
-    _url_utils_mod = importlib.import_module("url_utils")
     _model_utils_mod = importlib.import_module("model_utils")
-
-_AgentConfig = _config.AgentConfig
-build_llms = _chains.build_llms
-build_chains = _chains.build_chains
-ResponseError = _exceptions.ResponseError
-SearchClient = _search_client_mod.SearchClient
-EmbeddingClient = _embedding_client_mod.EmbeddingClient
-SearchOrchestrator = _search_orchestrator_mod.SearchOrchestrator
-SearchAbort = _search_orchestrator_mod.SearchAbort
-TopicManager = _topic_manager_mod.TopicManager
-_tail_turns = _topic_utils_mod._tail_turns
-_format_turns = _topic_utils_mod._format_turns
-_collect_prior_responses = _topic_utils_mod._collect_prior_responses
-_select_topic = _topic_utils_mod._select_topic
-_topic_brief = _topic_utils_mod._topic_brief
-_cosine_similarity = _topic_utils_mod._cosine_similarity
-
-_truncate_result = _text_utils_mod._truncate_result
-_normalize_query = _text_utils_mod._normalize_query
-_regex_validate = _text_utils_mod._regex_validate
-_truncate_text = _text_utils_mod._truncate_text
-_current_datetime_utc = _text_utils_mod._current_datetime_utc
-_is_context_length_error = _text_utils_mod._is_context_length_error
-_pick_seed_query = _text_utils_mod._pick_seed_query
-_PATTERN_SEARCH_DECISION = _text_utils_mod._PATTERN_SEARCH_DECISION
-_PATTERN_YES_NO = _text_utils_mod._PATTERN_YES_NO
-MAX_CONVERSATION_CHARS = _text_utils_mod.MAX_CONVERSATION_CHARS
-MAX_PRIOR_RESPONSE_CHARS = _text_utils_mod.MAX_PRIOR_RESPONSE_CHARS
-MAX_SEARCH_RESULTS_CHARS = _text_utils_mod.MAX_SEARCH_RESULTS_CHARS
-MAX_REBUILD_RETRIES = _text_utils_mod.MAX_REBUILD_RETRIES
-MAX_PROMPT_RECENT_TURNS = _text_utils_mod.MAX_PROMPT_RECENT_TURNS
-
-_extract_keywords = _keywords_mod._extract_keywords
-handle_missing_model = _model_utils_mod.handle_missing_model
 
 
 class Agent:
     def __init__(self, cfg: AgentConfig, *, output_stream: TextIO | None = None, is_tty: bool | None = None):
         self.cfg = cfg
-        self.llm_robot, self.llm_assistant = build_llms(cfg)
-        self.chains = build_chains(self.llm_robot, self.llm_assistant)
-        self.search_client = SearchClient(
+        self.llm_robot, self.llm_assistant = _chains.build_llms(cfg)
+        self.chains = _chains.build_chains(self.llm_robot, self.llm_assistant)
+        self.search_client = _search_client_mod.SearchClient(
             cfg,
             normalizer=self._normalize_search_result,
             notify_retry=self._notify_search_retry,
         )
-        self.embedding_client = EmbeddingClient(cfg.embedding_model)
-        self.topic_manager = TopicManager(
+        self.embedding_client = _embedding_client_mod.EmbeddingClient(cfg.embedding_model)
+        self.topic_manager = _topic_manager_mod.TopicManager(
             cfg,
             embedding_client=self.embedding_client,
             char_budget=self._char_budget,
@@ -193,7 +155,7 @@ class Agent:
     def _build_search_orchestrator(self) -> SearchOrchestratorType:
         return cast(
             SearchOrchestratorType,
-            SearchOrchestrator(
+            _search_orchestrator_mod.SearchOrchestrator(
                 self.cfg,
                 ddg_results=self._ddg_results,
                 embedding_client=self.embedding_client,
@@ -225,8 +187,8 @@ class Agent:
         self.cfg.robot_num_ctx = new_ctx
         self.cfg.assistant_num_predict = new_predict
         self.cfg.robot_num_predict = min(self.cfg.robot_num_predict, new_predict)
-        self.llm_robot, self.llm_assistant = build_llms(self.cfg)
-        self.chains = build_chains(self.llm_robot, self.llm_assistant)
+        self.llm_robot, self.llm_assistant = _chains.build_llms(self.cfg)
+        self.chains = _chains.build_chains(self.llm_robot, self.llm_assistant)
 
     def _restore_llm_params(self) -> None:
         base = self._base_llm_params
@@ -245,8 +207,8 @@ class Agent:
         cfg.robot_num_ctx = base["robot_num_ctx"]
         cfg.assistant_num_predict = base["assistant_num_predict"]
         cfg.robot_num_predict = base["robot_num_predict"]
-        self.llm_robot, self.llm_assistant = build_llms(cfg)
-        self.chains = build_chains(self.llm_robot, self.llm_assistant)
+        self.llm_robot, self.llm_assistant = _chains.build_llms(cfg)
+        self.chains = _chains.build_chains(self.llm_robot, self.llm_assistant)
 
     def _reduce_context_and_rebuild(self, stage_key: str, label: str) -> None:
         self.rebuild_counts[stage_key] += 1
@@ -258,7 +220,7 @@ class Agent:
             "Context too large (%s); rebuild %s/%s with num_ctx=%s, num_predict=%s.",
             label,
             self.rebuild_counts[stage_key],
-            MAX_REBUILD_RETRIES,
+            _text_utils_mod.MAX_REBUILD_RETRIES,
             reduced_ctx,
             reduced_predict,
         )
@@ -266,7 +228,7 @@ class Agent:
 
     def _ddg_results(self, query: str) -> Any:
         if self.search_client is None:
-            self.search_client = SearchClient(
+            self.search_client = _search_client_mod.SearchClient(
                 self.cfg,
                 normalizer=self._normalize_search_result,
                 notify_retry=self._notify_search_retry,
@@ -348,9 +310,9 @@ class Agent:
             return 0.0
         scores: List[float] = []
         if question_embedding:
-            scores.append(_cosine_similarity(candidate_embedding, question_embedding))
+            scores.append(_topic_utils_mod.cosine_similarity(candidate_embedding, question_embedding))
         if topic_embedding:
-            scores.append(_cosine_similarity(candidate_embedding, topic_embedding))
+            scores.append(_topic_utils_mod.cosine_similarity(candidate_embedding, topic_embedding))
         return max(scores) if scores else 0.0
 
     def _read_user_query(self) -> str:
@@ -401,15 +363,15 @@ class Agent:
         self._clear_error()
         self._reset_rebuild_counts()
         cfg = self.cfg
-        current_datetime = _current_datetime_utc()
+        current_datetime = _text_utils_mod.current_datetime_utc()
         dt_obj = datetime.now(timezone.utc)
         current_year = str(dt_obj.year)
         current_month = f"{dt_obj.month:02d}"
         current_day = f"{dt_obj.day:02d}"
-        question_keywords = _extract_keywords(user_query)
+        question_keywords = _keywords_mod.extract_keywords(user_query)
         question_embedding = self.embedding_client.embed(user_query)
         try:
-            selected_topic_index, recent_history, topic_keywords = _select_topic(
+            selected_topic_index, recent_history, topic_keywords = _topic_utils_mod.select_topic(
                 self.chains["context"],
                 self.topics,
                 user_query,
@@ -422,10 +384,10 @@ class Agent:
                 question_embedding=question_embedding,
                 embedding_threshold=cfg.embedding_similarity_threshold,
             )
-        except ResponseError as exc:  # Robot model not found, etc.
+        except _exceptions.ResponseError as exc:  # Robot model not found, etc.
             message = str(exc)
             if "not found" in message.lower():
-                handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
+                _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                 return None
             selected_topic_index = None
             recent_history = []
@@ -437,23 +399,29 @@ class Agent:
             topic_keywords = set(question_keywords)
         topic_brief_text = ""
         if selected_topic_index is not None and selected_topic_index < len(self.topics):
-            topic_brief_text = _topic_brief(self.topics[selected_topic_index])
+            topic_brief_text = _topic_utils_mod.topic_brief(self.topics[selected_topic_index])
         topic_embedding_current: List[float] | None = None
         if selected_topic_index is not None and selected_topic_index < len(self.topics):
             topic_embedding_current = self.topics[selected_topic_index].embedding
-        recent_for_prompt = _tail_turns(recent_history, MAX_PROMPT_RECENT_TURNS)
-        conversation_text = _format_turns(recent_for_prompt, "No prior relevant conversation.")
+        recent_for_prompt = _topic_utils_mod.tail_turns(recent_history, _text_utils_mod.MAX_PROMPT_RECENT_TURNS)
+        conversation_text = _topic_utils_mod.format_turns(recent_for_prompt, "No prior relevant conversation.")
         if topic_brief_text:
             conversation_text = f"Topic brief:\n{topic_brief_text}\n\nRecent turns:\n{conversation_text}"
-        conversation_text = _truncate_text(conversation_text, self._char_budget(MAX_CONVERSATION_CHARS))
+        conversation_text = _text_utils_mod.truncate_text(
+            conversation_text, self._char_budget(_text_utils_mod.MAX_CONVERSATION_CHARS)
+        )
         prior_responses_text = (
-            _collect_prior_responses(self.topics[selected_topic_index], max_chars=MAX_PRIOR_RESPONSE_CHARS)
+            _topic_utils_mod.collect_prior_responses(
+                self.topics[selected_topic_index], max_chars=_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS
+            )
             if selected_topic_index is not None
             else "No prior answers for this topic."
         )
         if topic_brief_text:
             prior_responses_text = f"{topic_brief_text}\n\nRecent answers:\n{prior_responses_text}"
-        prior_responses_text = _truncate_text(prior_responses_text, self._char_budget(MAX_PRIOR_RESPONSE_CHARS))
+        prior_responses_text = _text_utils_mod.truncate_text(
+            prior_responses_text, self._char_budget(_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS)
+        )
 
         aggregated_results: List[str] = []
 
@@ -471,14 +439,16 @@ class Agent:
                         known_answers=prior_responses_text,
                     )
                 )
-                decision_validated = _regex_validate(str(decision_raw), _PATTERN_SEARCH_DECISION, "SEARCH")
+                decision_validated = _text_utils_mod.regex_validate(
+                    str(decision_raw), _text_utils_mod.PATTERN_SEARCH_DECISION, "SEARCH"
+                )
                 should_search = decision_validated == "SEARCH"
-            except ResponseError as exc:
+            except _exceptions.ResponseError as exc:
                 if "not found" in str(exc).lower():
-                    handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
+                    _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                     return None
-                if _is_context_length_error(str(exc)):
-                    if self.rebuild_counts["search_decision"] < MAX_REBUILD_RETRIES:
+                if _text_utils_mod.is_context_length_error(str(exc)):
+                    if self.rebuild_counts["search_decision"] < _text_utils_mod.MAX_REBUILD_RETRIES:
                         self._reduce_context_and_rebuild("search_decision", "search decision")
                         try:
                             decision_raw = self.chains["search_decision"].invoke(
@@ -492,9 +462,11 @@ class Agent:
                                     known_answers=prior_responses_text,
                                 )
                             )
-                            decision_validated = _regex_validate(str(decision_raw), _PATTERN_SEARCH_DECISION, "SEARCH")
+                            decision_validated = _text_utils_mod.regex_validate(
+                                str(decision_raw), _text_utils_mod.PATTERN_SEARCH_DECISION, "SEARCH"
+                            )
                             should_search = decision_validated == "SEARCH"
-                        except ResponseError:
+                        except _exceptions.ResponseError:
                             should_search = False
                     else:
                         logging.info("Reached search decision rebuild cap; defaulting to NO_SEARCH fallback.")
@@ -525,13 +497,13 @@ class Agent:
                     )
                 )
                 seed_text = str(seed_raw).strip()
-                primary_search_query = _pick_seed_query(seed_text, user_query)
-            except ResponseError as exc:
+                primary_search_query = _text_utils_mod.pick_seed_query(seed_text, user_query)
+            except _exceptions.ResponseError as exc:
                 if "not found" in str(exc).lower():
-                    handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
+                    _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                     return None
-                if _is_context_length_error(str(exc)):
-                    if self.rebuild_counts["seed"] < MAX_REBUILD_RETRIES:
+                if _text_utils_mod.is_context_length_error(str(exc)):
+                    if self.rebuild_counts["seed"] < _text_utils_mod.MAX_REBUILD_RETRIES:
                         self._reduce_context_and_rebuild("seed", "seed")
                         try:
                             seed_raw = self.chains["seed"].invoke(
@@ -546,8 +518,8 @@ class Agent:
                                 )
                             )
                             seed_text = str(seed_raw).strip()
-                            primary_search_query = _pick_seed_query(seed_text, user_query)
-                        except ResponseError:
+                            primary_search_query = _text_utils_mod.pick_seed_query(seed_text, user_query)
+                        except _exceptions.ResponseError:
                             primary_search_query = user_query
                     else:
                         logging.info("Reached seed rebuild cap; using original user query as search seed.")
@@ -576,14 +548,16 @@ class Agent:
                     topic_keywords=topic_keywords,
                     primary_search_query=primary_search_query,
                 )
-            except SearchAbort:
+            except _search_orchestrator_mod.SearchAbort:
                 return None
         search_results_text = (
             "\n\n".join(aggregated_results)
             if should_search and aggregated_results
             else ("No search results collected." if should_search else "No web search performed.")
         )
-        search_results_text = _truncate_text(search_results_text, self._char_budget(MAX_SEARCH_RESULTS_CHARS))
+        search_results_text = _text_utils_mod.truncate_text(
+            search_results_text, self._char_budget(_text_utils_mod.MAX_SEARCH_RESULTS_CHARS)
+        )
         if should_search:
             resp_inputs = self._inputs(
                 current_datetime,
@@ -609,17 +583,17 @@ class Agent:
             chain = self.chains["response_no_search"]
         try:
             response_stream = chain.stream(resp_inputs)
-        except ResponseError as exc:
+        except _exceptions.ResponseError as exc:
             if "not found" in str(exc).lower():
-                handle_missing_model(self._mark_error, "Assistant", cfg.assistant_model)
+                _model_utils_mod.handle_missing_model(self._mark_error, "Assistant", cfg.assistant_model)
                 return None
-            if _is_context_length_error(str(exc)):
-                if self.rebuild_counts["answer"] < MAX_REBUILD_RETRIES:
+            if _text_utils_mod.is_context_length_error(str(exc)):
+                if self.rebuild_counts["answer"] < _text_utils_mod.MAX_REBUILD_RETRIES:
                     self._reduce_context_and_rebuild("answer", "answer")
                     try:
                         chain = self.chains["response"] if should_search else self.chains["response_no_search"]
                         response_stream = chain.stream(resp_inputs)
-                    except ResponseError as exc2:
+                    except _exceptions.ResponseError as exc2:
                         logging.error(f"Answer generation failed after retry: {exc2}")
                         self._mark_error("Answer generation failed after retry; see logs for details.")
                         return None
