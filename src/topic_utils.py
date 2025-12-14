@@ -7,8 +7,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Sequence, Set, Tuple
 
-from .keywords import _extract_keywords, _looks_like_followup
-from .text_utils import _PATTERN_CONTEXT, _normalize_context_decision, _regex_validate
+from .keywords import extract_keywords, looks_like_followup
+from .text_utils import PATTERN_CONTEXT, normalize_context_decision, regex_validate
 
 TopicTurns = List[Tuple[str, str]]
 
@@ -25,19 +25,19 @@ class Topic:
     embedding: List[float] | None = None
 
 
-def _tail_turns(turns: TopicTurns, limit: int) -> TopicTurns:
+def tail_turns(turns: TopicTurns, limit: int) -> TopicTurns:
     if limit is None or limit <= 0:
         return []
     return turns[-limit:]
 
 
-def _format_turns(turns: TopicTurns, fallback: str) -> str:
+def format_turns(turns: TopicTurns, fallback: str) -> str:
     if not turns:
         return fallback
     return "\n\n".join(f"User: {user}\nAssistant: {assistant}" for user, assistant in turns)
 
 
-def _topic_brief(topic: Topic, max_keywords: int = 10) -> str:
+def topic_brief(topic: Topic, max_keywords: int = 10) -> str:
     parts: List[str] = []
     if topic.summary:
         parts.append(f"Summary: {topic.summary}")
@@ -47,7 +47,7 @@ def _topic_brief(topic: Topic, max_keywords: int = 10) -> str:
     return "\n".join(parts).strip()
 
 
-def _cosine_similarity(vec_a: Sequence[float] | None, vec_b: Sequence[float] | None) -> float:
+def cosine_similarity(vec_a: Sequence[float] | None, vec_b: Sequence[float] | None) -> float:
     if not vec_a or not vec_b:
         return 0.0
     length = min(len(vec_a), len(vec_b))
@@ -62,7 +62,7 @@ def _cosine_similarity(vec_a: Sequence[float] | None, vec_b: Sequence[float] | N
     return max(-1.0, min(1.0, similarity))
 
 
-def _blend_embeddings(existing: Optional[List[float]], new: Sequence[float], decay: float) -> List[float]:
+def blend_embeddings(existing: Optional[List[float]], new: Sequence[float], decay: float) -> List[float]:
     if not new:
         return list(existing or [])
     decay_clamped = min(max(decay, 0.0), 0.9999)
@@ -77,7 +77,7 @@ def _blend_embeddings(existing: Optional[List[float]], new: Sequence[float], dec
     return blended
 
 
-def _collect_prior_responses(topic: Topic, limit: int = 3, max_chars: int = 1200) -> str:
+def collect_prior_responses(topic: Topic, limit: int = 3, max_chars: int = 1200) -> str:
     if not topic.turns:
         return "No prior answers for this topic."
     snippets: List[str] = []
@@ -91,7 +91,7 @@ def _collect_prior_responses(topic: Topic, limit: int = 3, max_chars: int = 1200
     return "\n\n---\n\n".join(snippets) or "No prior answers for this topic."
 
 
-def _select_topic(
+def select_topic(
     context_chain: Any,
     topics: List[Topic],
     question: str,
@@ -111,27 +111,27 @@ def _select_topic(
         overlap = len(topic.keywords.intersection(base_keywords))
         similarity = 0.0
         if question_embedding and topic.embedding:
-            similarity = _cosine_similarity(question_embedding, topic.embedding)
+            similarity = cosine_similarity(question_embedding, topic.embedding)
         if overlap > 0 or similarity >= embedding_threshold:
             candidates.append((overlap, similarity, idx))
     candidates.sort(key=lambda item: (-item[0], -item[1], item[2]))
     top_candidates = candidates[:3]
     if not top_candidates:
-        if _looks_like_followup(question, base_keywords):
+        if looks_like_followup(question, base_keywords):
             fallback_idx = len(topics) - 1
             fallback_topic = topics[fallback_idx]
-            recent_turns = _tail_turns(fallback_topic.turns, max_context_turns)
+            recent_turns = tail_turns(fallback_topic.turns, max_context_turns)
             return fallback_idx, recent_turns, base_keywords.union(fallback_topic.keywords)
         return None, [], set(base_keywords)
     decisions: List[Tuple[str, int, TopicTurns]] = []
     last_error: Exception | None = None
     for _, _, idx in top_candidates:
         topic = topics[idx]
-        recent_turns = _tail_turns(topic.turns, max_context_turns)
-        recent_text = _format_turns(recent_turns, "No prior conversation.")
-        topic_brief = _topic_brief(topic)
-        if topic_brief:
-            recent_text = f"Topic brief:\n{topic_brief}\n\nRecent turns:\n{recent_text}"
+        recent_turns = tail_turns(topic.turns, max_context_turns)
+        recent_text = format_turns(recent_turns, "No prior conversation.")
+        topic_brief_text = topic_brief(topic)
+        if topic_brief_text:
+            recent_text = f"Topic brief:\n{topic_brief_text}\n\nRecent turns:\n{recent_text}"
         try:
             decision_raw = context_chain.invoke(
                 {
@@ -147,8 +147,8 @@ def _select_topic(
             last_error = exc
             logging.warning("Context classification failed for a topic: %s", exc)
             continue
-        validated_context = _regex_validate(str(decision_raw), _PATTERN_CONTEXT, "NEW_TOPIC")
-        normalized = _normalize_context_decision(validated_context)
+        validated_context = regex_validate(str(decision_raw), PATTERN_CONTEXT, "NEW_TOPIC")
+        normalized = normalize_context_decision(validated_context)
         decisions.append((normalized, idx, recent_turns))
         if normalized == "FOLLOW_UP":
             return idx, recent_turns, base_keywords.union(topics[idx].keywords)
@@ -160,13 +160,13 @@ def _select_topic(
     return None, [], set(base_keywords)
 
 
-def _prune_keywords(topic: Topic, max_keep: int = MAX_TOPIC_KEYWORDS) -> None:
+def prune_keywords(topic: Topic, max_keep: int = MAX_TOPIC_KEYWORDS) -> None:
     if len(topic.keywords) <= max_keep:
         return
     freq: dict[str, int] = {}
     for user_text, assistant_text in topic.turns:
         combined = f"{user_text} {assistant_text}"
-        for kw in _extract_keywords(combined):
+        for kw in extract_keywords(combined):
             freq[kw] = freq.get(kw, 0) + 1
     for kw in topic.keywords:
         freq.setdefault(kw, 0)
@@ -181,12 +181,12 @@ __all__ = [
     "MAX_TURN_KEYWORD_SOURCE_CHARS",
     "Topic",
     "TopicTurns",
-    "_blend_embeddings",
-    "_collect_prior_responses",
-    "_cosine_similarity",
-    "_format_turns",
-    "_prune_keywords",
-    "_select_topic",
-    "_tail_turns",
-    "_topic_brief",
+    "blend_embeddings",
+    "collect_prior_responses",
+    "cosine_similarity",
+    "format_turns",
+    "prune_keywords",
+    "select_topic",
+    "tail_turns",
+    "topic_brief",
 ]

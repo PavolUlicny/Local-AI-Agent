@@ -87,7 +87,7 @@ _FOLLOWUP_PREFIXES = (
 )
 
 
-def _extract_keywords(text: str) -> Set[str]:
+def extract_keywords(text: str) -> Set[str]:
     if not text:
         return set()
     tokens = _TOKEN_PATTERN.findall(text.lower())
@@ -103,13 +103,13 @@ def _extract_keywords(text: str) -> Set[str]:
     }
 
 
-def _is_relevant(text: str, topic_keywords: Set[str]) -> bool:
+def is_relevant(text: str, topic_keywords: Set[str]) -> bool:
     if not topic_keywords:
         return True
-    return bool(_extract_keywords(text).intersection(topic_keywords))
+    return bool(extract_keywords(text).intersection(topic_keywords))
 
 
-def _looks_like_followup(question: str, keywords: Set[str]) -> bool:
+def looks_like_followup(question: str, keywords: Set[str]) -> bool:
     lowered = question.lower().strip()
     if not lowered:
         return False
@@ -131,7 +131,7 @@ def _looks_like_followup(question: str, keywords: Set[str]) -> bool:
 
 
 __all__ = [
-    "_extract_keywords",
-    "_is_relevant",
-    "_looks_like_followup",
+    "extract_keywords",
+    "is_relevant",
+    "looks_like_followup",
 ]
