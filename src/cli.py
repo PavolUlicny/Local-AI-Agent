@@ -4,29 +4,26 @@ import argparse
 import logging
 import sys
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 import importlib
 
-_AgentConfig = None
+# Runtime import of the project's `config` module (fallback to script-style import).
+try:
+    _config = importlib.import_module("src.config")
+except ModuleNotFoundError as exc:  # pragma: no cover - fallback for script-style runs
+    missing_root = getattr(exc, "name", "").split(".")[0]
+    if missing_root != "src":
+        raise
+    _config = importlib.import_module("config")
 
 if TYPE_CHECKING:  # make the AgentConfig type available to type checkers
     from src.config import AgentConfig
-else:
-    try:
-        _config = importlib.import_module("src.config")
-    except ModuleNotFoundError as exc:  # pragma: no cover - fallback for script-style runs
-        missing_root = getattr(exc, "name", "").split(".")[0]
-        if missing_root != "src":
-            raise
-        _config = importlib.import_module("config")
-
-    _AgentConfig: Any = _config.AgentConfig
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Local AI Agent with optional web search")
 
-    defaults: "AgentConfig" = cast("type[AgentConfig]", _AgentConfig)()
+    defaults: "AgentConfig" = cast("type[AgentConfig]", _config.AgentConfig)()
 
     parser.add_argument(
         "--robot-model",
