@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Callable, List, Set, TYPE_CHECKING
 
-from src.keywords import _extract_keywords
-from src.text_utils import _summarize_answer, _truncate_text
+from src.keywords import extract_keywords
+from src.text_utils import summarize_answer, truncate_text
 from src.topic_utils import (
     MAX_TOPICS,
     MAX_TURN_KEYWORD_SOURCE_CHARS,
     Topic,
-    _blend_embeddings,
-    _prune_keywords,
+    blend_embeddings,
+    prune_keywords,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -64,7 +64,7 @@ class TopicManager:
             response_text,
         )
         self._update_summary_and_embedding(topic_entry, user_query, response_text)
-        _prune_keywords(topic_entry)
+        prune_keywords(topic_entry)
         return selected_topic_index
 
     def _ensure_topic_exists(
@@ -110,23 +110,23 @@ class TopicManager:
         user_query: str,
         response_text: str,
     ) -> None:
-        aggregated_keyword_source = _truncate_text(
+        aggregated_keyword_source = truncate_text(
             " ".join(aggregated_results),
             self._char_budget(MAX_TURN_KEYWORD_SOURCE_CHARS),
         )
-        turn_keywords = _extract_keywords(" ".join([user_query, response_text, aggregated_keyword_source]))
+        turn_keywords = extract_keywords(" ".join([user_query, response_text, aggregated_keyword_source]))
         if not turn_keywords:
             turn_keywords = set(question_keywords)
         topic.keywords.update(turn_keywords)
         topic.keywords.update(topic_keywords)
 
     def _update_summary_and_embedding(self, topic: Topic, user_query: str, response_text: str) -> None:
-        new_summary = _summarize_answer(response_text)
+        new_summary = summarize_answer(response_text)
         if new_summary:
             topic.summary = new_summary
         turn_embedding = self._embedding_client.embed(f"User: {user_query}\nAssistant: {response_text}")
         if turn_embedding:
-            topic.embedding = _blend_embeddings(
+            topic.embedding = blend_embeddings(
                 topic.embedding,
                 turn_embedding,
                 self.cfg.embedding_history_decay,
