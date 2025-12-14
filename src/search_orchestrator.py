@@ -7,18 +7,18 @@ import logging
 from typing import Any, Callable, List, Set, TYPE_CHECKING
 
 from src.exceptions import ResponseError
-from src.keywords import _extract_keywords, _is_relevant
+from src.keywords import extract_keywords, is_relevant
 from src.text_utils import (
     MAX_REBUILD_RETRIES,
     MAX_SEARCH_RESULTS_CHARS,
-    _PATTERN_YES_NO,
-    _is_context_length_error,
-    _normalize_query,
-    _regex_validate,
-    _truncate_result,
-    _truncate_text,
+    PATTERN_YES_NO,
+    is_context_length_error,
+    normalize_query,
+    regex_validate,
+    truncate_result,
+    truncate_text,
 )
-from src.url_utils import _canonicalize_url
+from src.url_utils import canonicalize_url
 from src.model_utils import handle_missing_model
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
@@ -78,12 +78,12 @@ class SearchOrchestrator:
             return aggregated_results, topic_keywords
 
         pending_queries: List[str] = [primary_search_query]
-        seen_query_norms: Set[str] = {_normalize_query(primary_search_query)}
+        seen_query_norms: Set[str] = {normalize_query(primary_search_query)}
         seen_result_hashes: Set[str] = set()
         seen_urls: Set[str] = set()
         if not topic_keywords:
-            topic_keywords.update(_extract_keywords(user_query))
-            topic_keywords.update(_extract_keywords(primary_search_query))
+            topic_keywords.update(extract_keywords(user_query))
+            topic_keywords.update(extract_keywords(primary_search_query))
         max_rounds = self.cfg.max_rounds
         round_index = 0
         iteration_guard = max(max_rounds * 4, 20)
@@ -106,7 +106,7 @@ class SearchOrchestrator:
                 snippet = str(res.get("snippet", "")).strip()
                 if not any([title, snippet, link]):
                     continue
-                norm_link = _canonicalize_url(link) if link else ""
+                norm_link = canonicalize_url(link) if link else ""
                 if norm_link and norm_link in seen_urls:
                     continue
                 assembled = "\n".join(
@@ -121,9 +121,9 @@ class SearchOrchestrator:
                 result_hash = hashlib.sha256(assembled.encode("utf-8", errors="ignore")).hexdigest()
                 if result_hash in seen_result_hashes:
                     continue
-                result_text = _truncate_result(assembled)
+                result_text = truncate_result(assembled)
                 keywords_source = " ".join([part for part in [title, snippet] if part])
-                relevant = _is_relevant(result_text, topic_keywords)
+                relevant = is_relevant(result_text, topic_keywords)
                 if not relevant:
                     result_embedding = self._embedding_client.embed(keywords_source)
                     similarity = self._context_similarity(
@@ -140,7 +140,7 @@ class SearchOrchestrator:
                         if len(kw_list) > 50:
                             kw_list = kw_list[:50]
                         topic_keywords_text = ", ".join(kw_list) if kw_list else "None"
-                        topic_keywords_text = _truncate_text(topic_keywords_text, 1000)
+                        topic_keywords_text = truncate_text(topic_keywords_text, 1000)
                         try:
                             relevance_raw = chains["result_filter"].invoke(
                                 self._inputs(
@@ -156,13 +156,13 @@ class SearchOrchestrator:
                                     topic_keywords=topic_keywords_text,
                                 )
                             )
-                            relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
+                            relevance_decision = regex_validate(str(relevance_raw), PATTERN_YES_NO, "NO")
                             relevance_llm_checks += 1
                         except ResponseError as exc:  # pragma: no cover - network/model specific
                             if "not found" in str(exc).lower():
                                 handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                                 raise SearchAbort from exc
-                            if _is_context_length_error(str(exc)):
+                            if is_context_length_error(str(exc)):
                                 if self._rebuild_counts["relevance"] < MAX_REBUILD_RETRIES:
                                     self._reduce_context_and_rebuild("relevance", "relevance")
                                     try:
@@ -180,7 +180,7 @@ class SearchOrchestrator:
                                                 topic_keywords=topic_keywords_text,
                                             )
                                         )
-                                        relevance_decision = _regex_validate(str(relevance_raw), _PATTERN_YES_NO, "NO")
+                                        relevance_decision = regex_validate(str(relevance_raw), PATTERN_YES_NO, "NO")
                                         relevance_llm_checks += 1
                                     except ResponseError:
                                         logging.info(
@@ -213,7 +213,7 @@ class SearchOrchestrator:
                 seen_result_hashes.add(result_hash)
                 if norm_link:
                     seen_urls.add(norm_link)
-                topic_keywords.update(_extract_keywords(keywords_source))
+                topic_keywords.update(extract_keywords(keywords_source))
                 accepted_any = True
             if not accepted_any:
                 logging.info("No relevant results for '%s'. Not counting toward limit.", current_query)
@@ -227,7 +227,7 @@ class SearchOrchestrator:
             if remaining_slots > 0:
                 suggestion_limit = min(self.cfg.max_followup_suggestions, remaining_slots)
                 results_to_date = "\n\n".join(aggregated_results) or "No results yet."
-                results_to_date = _truncate_text(results_to_date, self._char_budget(MAX_SEARCH_RESULTS_CHARS))
+                results_to_date = truncate_text(results_to_date, self._char_budget(MAX_SEARCH_RESULTS_CHARS))
                 try:
                     suggestions_raw = chains["planning"].invoke(
                         self._inputs(
@@ -246,7 +246,7 @@ class SearchOrchestrator:
                     if "not found" in str(exc).lower():
                         handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                         raise SearchAbort from exc
-                    if _is_context_length_error(str(exc)):
+                    if is_context_length_error(str(exc)):
                         if self._rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
                             self._reduce_context_and_rebuild("planning", "planning")
                             try:
@@ -281,7 +281,7 @@ class SearchOrchestrator:
                     suggestions_raw = "NONE"
                 new_queries = self._parse_suggestions(suggestions_raw, suggestion_limit)
                 for candidate in new_queries:
-                    norm_candidate = _normalize_query(candidate)
+                    norm_candidate = normalize_query(candidate)
                     if norm_candidate in seen_query_norms or len(pending_queries) >= max_rounds:
                         continue
                     candidate_embedding = self._embedding_client.embed(candidate)
@@ -314,7 +314,7 @@ class SearchOrchestrator:
                         if "not found" in str(exc).lower():
                             handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                             raise SearchAbort from exc
-                        if _is_context_length_error(str(exc)):
+                        if is_context_length_error(str(exc)):
                             if self._rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
                                 self._reduce_context_and_rebuild("query_filter", "query filter")
                                 try:
@@ -352,7 +352,7 @@ class SearchOrchestrator:
                             exc,
                         )
                         continue
-                    verdict = _regex_validate(str(verdict_raw), _PATTERN_YES_NO, "NO")
+                    verdict = regex_validate(str(verdict_raw), PATTERN_YES_NO, "NO")
                     if verdict == "YES" and norm_candidate not in seen_query_norms:
                         pending_queries.append(candidate)
                         seen_query_norms.add(norm_candidate)
@@ -399,7 +399,7 @@ class SearchOrchestrator:
                 break
             suggestion_limit = min(self.cfg.max_followup_suggestions, remaining_slots)
             results_to_date = "\n\n".join(aggregated_results) or "No results yet."
-            results_to_date = _truncate_text(results_to_date, MAX_SEARCH_RESULTS_CHARS)
+            results_to_date = truncate_text(results_to_date, MAX_SEARCH_RESULTS_CHARS)
             try:
                 suggestions_raw = chains["planning"].invoke(
                     self._inputs(
@@ -418,7 +418,7 @@ class SearchOrchestrator:
                 if "not found" in str(exc).lower():
                     handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                     raise SearchAbort from exc
-                if _is_context_length_error(str(exc)):
+                if is_context_length_error(str(exc)):
                     if self._rebuild_counts["planning"] < MAX_REBUILD_RETRIES:
                         self._reduce_context_and_rebuild("planning", "planning")
                         try:
@@ -453,7 +453,7 @@ class SearchOrchestrator:
                 break
             fill_queries = self._parse_suggestions(suggestions_raw, suggestion_limit)
             for candidate in fill_queries:
-                norm_candidate = _normalize_query(candidate)
+                norm_candidate = normalize_query(candidate)
                 if norm_candidate in seen_query_norms or len(pending_queries) >= self.cfg.max_rounds:
                     continue
                 candidate_embedding = self._embedding_client.embed(candidate)
@@ -486,7 +486,7 @@ class SearchOrchestrator:
                     if "not found" in str(exc).lower():
                         handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
                         raise SearchAbort from exc
-                    if _is_context_length_error(str(exc)):
+                    if is_context_length_error(str(exc)):
                         if self._rebuild_counts["query_filter"] < MAX_REBUILD_RETRIES:
                             self._reduce_context_and_rebuild("query_filter", "query filter")
                             try:
@@ -527,7 +527,7 @@ class SearchOrchestrator:
                         exc,
                     )
                     continue
-                verdict = _regex_validate(str(verdict_raw), _PATTERN_YES_NO, "NO")
+                verdict = regex_validate(str(verdict_raw), PATTERN_YES_NO, "NO")
                 if verdict == "YES" and norm_candidate not in seen_query_norms:
                     pending_queries.append(candidate)
                     seen_query_norms.add(norm_candidate)
