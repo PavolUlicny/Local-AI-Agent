@@ -6,7 +6,7 @@ import re
 from urllib.parse import urlparse, urlunparse
 
 
-def _canonicalize_url(url: str) -> str:
+def canonicalize_url(url: str) -> str:
     if not url:
         return ""
     try:
@@ -37,4 +37,4 @@ def _canonicalize_url(url: str) -> str:
         return url.strip().rstrip("/")
 
 
-__all__ = ["_canonicalize_url"]
+__all__ = ["canonicalize_url"]
