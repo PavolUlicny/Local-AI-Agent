@@ -13,8 +13,6 @@ try:
 except ModuleNotFoundError:
     _model_utils_mod = importlib.import_module("model_utils")
 
-handle_missing_model = _model_utils_mod.handle_missing_model
-
 
 class EmbeddingClient:
     """Lazily construct and reuse Ollama embedding clients."""
@@ -56,7 +54,7 @@ class EmbeddingClient:
             # Prefer the centralized missing-model handler when the model is simply not found.
             msg = str(exc).lower()
             if "not found" in msg:
-                handle_missing_model(None, "Embedding", self.model_name)
+                _model_utils_mod.handle_missing_model(None, "Embedding", self.model_name)
             else:
                 if not self._warning_logged:
                     logging.warning(
@@ -72,7 +70,7 @@ class EmbeddingClient:
     def _log_embed_failure(self, exc: Exception) -> None:
         message = str(exc).lower()
         if "not found" in message:
-            handle_missing_model(None, "Embedding", self.model_name)
+            _model_utils_mod.handle_missing_model(None, "Embedding", self.model_name)
         else:
             logging.warning("Embedding generation failed (%s): %s", self.model_name, exc)
 
