@@ -36,9 +36,11 @@ def test_search_client_closed_after_answer_once(monkeypatch: pytest.MonkeyPatch)
         def close(self):  # noqa: D401
             self.closed = True
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(no_auto_search=True))
     closable: Any = _Closeable()
@@ -102,7 +104,9 @@ def test_ddg_timeout_respects_fractional(monkeypatch: pytest.MonkeyPatch) -> Non
             self.closed = True
 
     monkeypatch.setattr(search_client_module, "DDGS", _FakeDDGS)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(search_timeout=0.5, no_auto_search=True))
     agent._ddg_results("hello")

@@ -51,10 +51,10 @@ def test_result_embedding_shortcircuits_relevance_llm(monkeypatch: pytest.Monkey
             return [1.0, 0.0]
         return [0.0, 1.0]
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
     monkeypatch.setattr(agent_module.Agent, "_ddg_results", fake_ddg_results, raising=False)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", fake_embed_text, raising=False)
+    monkeypatch.setattr(agent_module._embedding_client_mod.EmbeddingClient, "embed", fake_embed_text, raising=False)
 
     agent = agent_module.Agent(AgentConfig())
     agent.answer_once("Hola?")
@@ -92,10 +92,10 @@ def test_query_filter_embedding_skips_low_similarity_candidates(monkeypatch: pyt
             return [0.0, 1.0]
         return [1.0, 0.0]
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
     monkeypatch.setattr(agent_module.Agent, "_ddg_results", fake_ddg_results, raising=False)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", fake_embed_text, raising=False)
+    monkeypatch.setattr(agent_module._embedding_client_mod.EmbeddingClient, "embed", fake_embed_text, raising=False)
 
     agent = agent_module.Agent(AgentConfig(max_rounds=1, max_followup_suggestions=1))
     agent.answer_once("Space policy?")
@@ -110,7 +110,7 @@ def test_planning_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch) -> No
 
     class PlanningErrorChain(DummyChain):
         def invoke(self, inputs: dict[str, Any]):  # noqa: D401, ANN001
-            raise agent_module.ResponseError("plan boom")
+            raise agent_module._exceptions.ResponseError("plan boom")
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
@@ -133,10 +133,12 @@ def test_planning_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch) -> No
             }
         ]
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
     monkeypatch.setattr(agent_module.Agent, "_ddg_results", fake_ddg_results, raising=False)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(max_rounds=2))
     result = agent.answer_once("test planning?")
@@ -168,10 +170,12 @@ def test_search_loop_guard_prevents_spin(
             "response_no_search": DummyChain(stream_tokens=[]),
         }
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
     monkeypatch.setattr(agent_module.Agent, "_ddg_results", lambda self, q: [], raising=False)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(max_rounds=1))
     with caplog.at_level(logging.WARNING):

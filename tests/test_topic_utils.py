@@ -7,30 +7,30 @@ from src import topic_utils as TU
 
 def test_tail_turns_limits_history() -> None:
     turns = [(f"user{i}", f"assistant{i}") for i in range(4)]
-    assert TU._tail_turns(turns, 2) == turns[-2:]
-    assert TU._tail_turns(turns, 0) == []
+    assert TU.tail_turns(turns, 2) == turns[-2:]
+    assert TU.tail_turns(turns, 0) == []
 
 
 def test_topic_brief_includes_summary_and_keywords() -> None:
     topic = TU.Topic(keywords={"renewable", "policy", "tax"})
     topic.summary = "Key findings on renewable incentives in 2024."
-    brief = TU._topic_brief(topic, max_keywords=2)
+    brief = TU.topic_brief(topic, max_keywords=2)
     assert "Summary" in brief and "Keywords" in brief
     assert "renewable" in brief
 
 
 def test_cosine_similarity_handles_matching_and_orthogonal_vectors() -> None:
-    assert TU._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
-    assert TU._cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+    assert TU.cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+    assert TU.cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
 
 
 def test_blend_embeddings_respects_decay() -> None:
-    blended = TU._blend_embeddings([1.0, 0.0], [0.0, 1.0], decay=0.5)
+    blended = TU.blend_embeddings([1.0, 0.0], [0.0, 1.0], decay=0.5)
     assert blended == pytest.approx([0.5, 0.5])
 
 
 def test_blend_embeddings_expands_to_longer_vector() -> None:
-    blended = TU._blend_embeddings([1.0], [0.0, 1.0, 2.0], decay=0.2)
+    blended = TU.blend_embeddings([1.0], [0.0, 1.0, 2.0], decay=0.2)
     assert blended == pytest.approx([0.2, 0.8, 1.6])
 
 
@@ -39,7 +39,7 @@ def test_prune_keywords_keeps_most_frequent_terms() -> None:
         keywords={"alpha", "beta", "gamma"},
         turns=[("alpha beta", "alpha"), ("gamma", "beta beta")],
     )
-    TU._prune_keywords(topic, max_keep=2)
+    TU.prune_keywords(topic, max_keep=2)
     assert topic.keywords <= {"alpha", "beta"}
 
 
@@ -60,7 +60,7 @@ def test_select_topic_uses_embeddings_when_keywords_absent() -> None:
         embedding=[1.0, 0.0],
     )
 
-    idx, turns, keywords = TU._select_topic(
+    idx, turns, keywords = TU.select_topic(
         chain,
         [topic],
         question="Follow-up question",
@@ -84,7 +84,7 @@ def test_select_topic_fallbacks_to_latest_topic_on_followup() -> None:
     first_topic = TU.Topic(keywords={"workstation"}, turns=[("what's new?", "answer1")])
     latest_topic = TU.Topic(keywords={"gpu"}, turns=[("what is the best gpu?", "answer2")])
 
-    idx, turns, keywords = TU._select_topic(
+    idx, turns, keywords = TU.select_topic(
         chain,
         [first_topic, latest_topic],
         question="how much does it cost?",

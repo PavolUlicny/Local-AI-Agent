@@ -35,10 +35,10 @@ def test_answer_once_without_search_uses_response_no_search(
     def fail_if_search_runs(self, query: str):  # noqa: ANN001
         raise AssertionError(f"Search should not run for query: {query}")
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
     monkeypatch.setattr(agent_module.Agent, "_ddg_results", fail_if_search_runs, raising=False)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0])
+    monkeypatch.setattr(agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0])
 
     agent = agent_module.Agent(AgentConfig())
     result = agent.answer_once("Hola?")
@@ -71,9 +71,11 @@ def test_zero_context_turns_drop_history(monkeypatch: pytest.MonkeyPatch) -> Non
             "response_no_search": response_chain,
         }
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(no_auto_search=True, max_context_turns=0))
     agent.answer_once("First?")
@@ -101,9 +103,11 @@ def test_rebuild_counts_reset_each_query(monkeypatch: pytest.MonkeyPatch) -> Non
             "response_no_search": response_chain,
         }
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(no_auto_search=True))
     agent.rebuild_counts = dict.fromkeys(agent.rebuild_counts, 2)
@@ -118,7 +122,7 @@ def test_fatal_error_bubbles_via_last_error(monkeypatch: pytest.MonkeyPatch) -> 
 
     class ErrorChain(DummyChain):
         def stream(self, inputs: dict[str, Any]):  # noqa: D401, ANN001
-            raise agent_module.ResponseError("assistant model not found")
+            raise agent_module._exceptions.ResponseError("assistant model not found")
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
@@ -132,9 +136,11 @@ def test_fatal_error_bubbles_via_last_error(monkeypatch: pytest.MonkeyPatch) -> 
             "response_no_search": ErrorChain(),
         }
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(no_auto_search=True))
     result = agent.answer_once("Hola?")
@@ -163,10 +169,12 @@ def test_force_search_skips_classifier(monkeypatch: pytest.MonkeyPatch) -> None:
             "response_no_search": DummyChain(stream_tokens=[]),
         }
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
     monkeypatch.setattr(agent_module.Agent, "_ddg_results", lambda self, q: [], raising=False)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(force_search=True))
     result = agent.answer_once("Should search")
@@ -196,9 +204,11 @@ def test_stream_error_does_not_persist_state(monkeypatch: pytest.MonkeyPatch) ->
             "response_no_search": BrokenChain(),
         }
 
-    monkeypatch.setattr(agent_module, "build_llms", fake_build_llms)
-    monkeypatch.setattr(agent_module, "build_chains", fake_build_chains)
-    monkeypatch.setattr(agent_module.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False)
+    monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
+    monkeypatch.setattr(agent_module._chains, "build_chains", fake_build_chains)
+    monkeypatch.setattr(
+        agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
+    )
 
     agent = agent_module.Agent(AgentConfig(no_auto_search=True))
     result = agent.answer_once("Hello?")
