@@ -60,7 +60,20 @@ def pull_models(models: Sequence[str]) -> None:
     if not models:
         return
     if not shutil.which("ollama"):
-        print("ollama CLI not found; skip pulls", file=sys.stderr)
+        print(
+            "Ollama CLI not found; model pulls will be skipped.",
+            file=sys.stderr,
+        )
+        print(
+            "To enable model pulls install Ollama and re-run the installer:",
+            file=sys.stderr,
+        )
+        print("  Linux (quick): curl -fsSL https://ollama.com/install.sh | sh", file=sys.stderr)
+        print("  Windows: download the installer from https://ollama.com", file=sys.stderr)
+        print(
+            "Alternatively run the installer with --no-pull-models to skip pulling models.",
+            file=sys.stderr,
+        )
         return
     for model in models:
         print("→", "ollama", "pull", model)
@@ -313,6 +326,30 @@ def main() -> None:
         if py312:
             print(f"Found Python 3.12 at: {py312} — using it to create the venv")
             args.python = py312
+
+    # Verify the chosen Python is actually Python 3.12. If not, fail early
+    # with an actionable message — we do not try to install Python automatically.
+    try:
+        out = subprocess.check_output([args.python, "-c", "import sys; print(sys.version_info[:2])"]).decode().strip()
+        if "(3, 12)" not in out and "3, 12" not in out:
+            print(
+                "Error: Python 3.12 not found. The installer requires Python 3.12.",
+                file=sys.stderr,
+            )
+            print("Options:", file=sys.stderr)
+            print("  - Install Python 3.12 (Linux: `sudo apt install python3.12` or use pyenv).", file=sys.stderr)
+            print(
+                "  - On Windows download the official installer from https://www.python.org/ or use the Microsoft Store.",
+                file=sys.stderr,
+            )
+            print("  - Re-run the installer with `--python /path/to/python3.12` once installed.", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        print(
+            "Error: Unable to verify the chosen Python interpreter. Ensure Python 3.12 is installed.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Attempt to read configured defaults from the project's AgentConfig (if available).
     cfg = None
