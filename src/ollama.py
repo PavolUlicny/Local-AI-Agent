@@ -3,7 +3,7 @@
 This module exposes small, testable functions for:
 - checking whether the `ollama` CLI is installed,
 - probing the local Ollama HTTP API for readiness,
-- starting `ollama serve` detached and waiting until the API is responding,
+- starting the Ollama runtime in detached mode and waiting until the API is responding,
 - a convenience `ensure_available()` that returns a boolean status rather
   than exiting the process.
 
@@ -52,7 +52,7 @@ def is_ready(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float 
 
 
 def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen]:
-    """Start `ollama serve` detached and return the Popen object on success.
+    """Start the Ollama runtime detached and return the Popen object on success.
 
     If `log_path` is provided (or the default), stdout/stderr are redirected
     to that file; otherwise they are suppressed. On failure the function
@@ -82,7 +82,7 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen]:
         )
         pid = getattr(proc, "pid", None)
         if pid:
-            logger.debug("Started ollama serve (pid %s)", pid)
+            logger.debug("Started Ollama (pid %s)", pid)
         return proc
     except FileNotFoundError:
         logger.error("Failed to start Ollama: 'ollama' not found at execution time")
