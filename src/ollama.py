@@ -113,7 +113,7 @@ def wait_for_ready(
     return False
 
 
-def ensure_available(wait_seconds: int = 30, log_path: str | None = None) -> bool:
+def ensure_available(wait_seconds: int = 30, log_path: str | None = None, poll_interval: float = 1.0) -> bool:
     """Ensure Ollama is installed and responding.
 
     Returns True when the Ollama HTTP API is responding (either already
@@ -132,7 +132,7 @@ def ensure_available(wait_seconds: int = 30, log_path: str | None = None) -> boo
     if proc is None:
         return False
 
-    ok = wait_for_ready(wait_seconds=wait_seconds)
+    ok = wait_for_ready(wait_seconds=wait_seconds, poll_interval=poll_interval)
     if not ok:
         return False
     return True
@@ -160,7 +160,7 @@ def check_and_start_ollama(
 
     logger.info("Verifying Ollama availability...")
 
-    ok = ensure_available(wait_seconds=wait_seconds, log_path=log_path)
+    ok = ensure_available(wait_seconds=wait_seconds, log_path=log_path, poll_interval=poll_interval)
     if ok:
         logger.info("Ollama is available and responding.")
         return True
