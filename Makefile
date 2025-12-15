@@ -1,9 +1,17 @@
-SHELL := /bin/bash
+# Cross-platform venv python/pip selection
+ifeq ($(OS),Windows_NT)
+	# On Windows use the Scripts path
+	PY := .venv\\Scripts\\python.exe
+	PIP := .venv\\Scripts\\pip.exe
+	CURL := curl -fsS
+else
+	SHELL := /bin/bash
 
-# Configuration
-PY                  := .venv/bin/python
-PIP                 := .venv/bin/pip
-CURL                := curl -fsS
+	# Configuration (Unix-like)
+	PY := .venv/bin/python
+	PIP := .venv/bin/pip
+	CURL := curl -fsS
+endif
 # Make variables aligned with CLI flag names (hyphens → underscores). Short aliases noted for quick lookup.
 QUESTION            ?= # --question / --q
 MAX_ROUNDS          ?= # --max-rounds / --mr
@@ -81,7 +89,7 @@ EXTRA_ARGS += $(if $(ASSISTANT_MODEL), --assistant-model $(ASSISTANT_MODEL))
 
 EXTRA_MODEL_ARGS :=
 
-.PHONY: help venv install dev-setup pull-model serve-ollama run ask run-no-search run-search check-ollama check smoke clean
+.PHONY: help venv install dev-setup pull-model serve-ollama run ask run-no-search run-search check-ollama check smoke clean typecheck
 
 help: ## Show available targets
 	@awk 'BEGIN{FS":.*?## "};/^[a-zA-Z0-9_.-]+:.*?## /{printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -95,6 +103,11 @@ install: venv ## Install project dependencies
 
 install-dev: venv ## Install runtime and dev dependencies (pinned by constraints)
 	@$(PIP) install -r requirements.txt -r requirements-dev.txt
+
+
+typecheck: venv ## Run type checking and linting
+	@$(PY) -m mypy
+	@$(PY) -m ruff check .
 
 dev-setup: install pull-model ## Install deps and pull configured role models
 
