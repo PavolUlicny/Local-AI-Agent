@@ -55,4 +55,4 @@ def test_start_ollama_if_needed_starts(monkeypatch, tmp_path, capsys):
     inst.start_ollama_if_needed(wait_seconds=3)
 
     captured = capsys.readouterr()
-    assert "Started ollama serve (pid" in captured.out or "Ollama server already responding" in captured.out
+    assert "Started Ollama (pid" in captured.out or "Ollama server already responding" in captured.out
