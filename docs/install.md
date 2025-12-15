@@ -43,12 +43,9 @@ The repository includes `scripts/install_deps.py`, a small installer that:
 - installs runtime dependencies from `requirements.txt` (and dev deps by default);
 - optionally pulls Ollama models (defaults: `cogito:8b` and `embeddinggemma:300m`).
 
-You do NOT need to start the Ollama server before running the installer.
-If the `ollama` CLI is available on your `PATH` and the HTTP API is not
-responding, the installer will attempt to start a local Ollama daemon and
-wait briefly for it to become available. If you prefer to manage Ollama
-manually you can still run `ollama serve` in another terminal, but it is not
-required for the installer to work.
+This installer is covered by a small unit test `tests/test_install_deps.py` which verifies detection of Python 3.12, behavior when `ollama` is missing, and the auto-start/poll logic (via mocks). See `docs/development.md` for how to run the tests locally.
+
+You do NOT need to start the Ollama server before running the installer. If the `ollama` CLI is available on your `PATH` and the HTTP API is not responding, the installer will attempt to start a local Ollama daemon and wait briefly for it to become available. If you prefer to manage Ollama manually you can still run `ollama serve` in another terminal, but it is not required for the installer to work.
 
 Main installer commands
 
@@ -92,22 +89,13 @@ python3 -m scripts.install_deps --robot-model "llama3:8b" --assistant-model "lla
 
 ### Notes about model pulls
 
-- The installer will call `ollama pull` for the main model and the embedding model unless
-  you pass `--no-pull-models`. If the `ollama` CLI is not on your `PATH` the script prints a
-  warning and skips pulls so the installer still succeeds.
+- The installer will call `ollama pull` for the main model and the embedding model unless you pass `--no-pull-models`. If the `ollama` CLI is not on your `PATH` the script prints a warning and skips pulls so the installer still succeeds.
 
 ### Troubleshooting & notes
 
-- The installer prefers an existing Python 3.12 interpreter; it will not try to
-  download or install Python for you. If Python 3.12 is not available install it
-  via your OS package manager or `pyenv` and re-run the installer.
-- If the installer attempted to start Ollama but pulls fail, check the installer
-  log at `~/.local/share/ollama/installer_ollama.log` (if created) and run
-  `ollama serve` manually to inspect output. The installer polls
-  `http://127.0.0.1:11434/api/tags` for readiness when starting the daemon.
-- Model pulls stream their output to your terminal so you can monitor download
-  progress; failed pulls are reported as warnings and do not abort dependency
-  installation.
+- The installer prefers an existing Python 3.12 interpreter; it will not try to download or install Python for you. If Python 3.12 is not available install it via your OS package manager or `pyenv` and re-run the installer.
+- If the installer attempted to start Ollama but pulls fail, check the installer log at `~/.local/share/ollama/installer_ollama.log` (if created) and run `ollama serve` manually to inspect output. The installer polls `http://127.0.0.1:11434/api/tags` for readiness when starting the daemon.
+- Model pulls stream their output to your terminal so you can monitor download progress; failed pulls are reported as warnings and do not abort dependency installation.
 
 ### Manual install (alternative)
 
