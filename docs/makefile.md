@@ -11,7 +11,7 @@ This file documents common `Makefile` targets and examples for running the proje
 - `make install-deps` — wrapper that runs `python -m scripts.install_deps` (installer script).
 - `make dev-setup` — `install` + `pull-model` (pulls configured Ollama models).
 - `make pull-model` — run `ollama pull` for role models (overrides via `ROBOT_MODEL`/`ASSISTANT_MODEL`).
-- `make serve-ollama` — run `ollama serve` (foreground).
+- `make serve-ollama` — run the Ollama server in the foreground (optional; the installer can start Ollama automatically).
 - `make run` — run the interactive agent (`python -m src.main`).
 - `make ask` — one-shot question (pass `QUESTION="..."`).
 - `make run-no-search` — run one-shot with `--no-auto-search`.
