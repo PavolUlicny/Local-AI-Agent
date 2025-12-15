@@ -110,7 +110,7 @@ serve-ollama: ## Run Ollama server in foreground
 	@ollama serve
 
 install-deps: ## Create venv, install runtime+dev deps and pull configured Ollama models via installer
-	@python -m scripts.install_deps
+	@python -m scripts.install_deps $(if $(NO_PULL_MODELS),--no-pull-models,)
 
 bootstrap: install-deps ## Alias for `install-deps` (convenience)
 	@:
