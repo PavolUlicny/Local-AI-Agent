@@ -80,8 +80,16 @@ def pull_models(models: Sequence[str]) -> None:
         # Start the pull process and stream its combined stdout/stderr live so
         # the user sees progress as it happens (large model downloads).
         try:
+            # Force UTF-8 decoding and replace invalid characters so Windows
+            # console encodings (cp1252) do not raise UnicodeDecodeError when
+            # binary chunks contain bytes outside the encoding's range.
             with subprocess.Popen(
-                ["ollama", "pull", model], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+                ["ollama", "pull", model],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             ) as proc:
                 # Stream output line-by-line as it becomes available
                 if proc.stdout is not None:
