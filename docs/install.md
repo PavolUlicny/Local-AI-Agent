@@ -27,6 +27,15 @@ If you want to force a specific interpreter, pass `--python /path/to/python` to 
 
 Other Python versions (for example, 3.10–3.11 or future releases) are untested and may produce installation or runtime errors.
 
+### Agent runtime requirement: Ollama
+
+The interactive agent (the `src.main` entrypoint) requires the Ollama runtime at startup. When you run the agent it will check for the `ollama` CLI on your `PATH` and probe the local HTTP API at `http://127.0.0.1:11434/api/tags`.
+
+- If the `ollama` CLI is present but the HTTP API is not responding, the agent will attempt to start the Ollama runtime in the background and wait briefly for the service to become available.
+- If `ollama` is not installed, or the agent cannot start or connect to the Ollama HTTP API within the timeout, the agent will exit with an error to avoid running in a degraded state.
+
+If you need to run parts of the project (for example in CI) without Ollama, use the installer flags (`--no-pull-models`) and Makefile helpers to avoid model pulls; consider running only the non-interactive tests or adding CI-specific guards. If you prefer a non-fatal startup for interactive runs, I can add an explicit CLI opt-out (for example `--allow-no-ollama`) that lets the agent continue without Ollama.
+
 ### Prerequisites
 
 - Debian/Ubuntu: install the system venv helper so the installer can create `.venv`:
@@ -45,7 +54,7 @@ The repository includes `scripts/install_deps.py`, a small installer that:
 
 This installer is covered by a small unit test `tests/test_install_deps.py` which verifies detection of Python 3.12, behavior when `ollama` is missing, and the auto-start/poll logic (via mocks). See `docs/development.md` for how to run the tests locally.
 
-You do NOT need to start the Ollama server before running the installer. If the `ollama` CLI is available on your `PATH` and the HTTP API is not responding, the installer will attempt to start a local Ollama daemon and wait briefly for it to become available. If you prefer to manage Ollama manually you can still run `ollama serve` in another terminal, but it is not required for the installer to work.
+You do NOT need to start the Ollama server before running the installer. If the `ollama` CLI is available on your `PATH` and the HTTP API is not responding, the installer will attempt to start a local Ollama daemon and wait briefly for it to become available. If you prefer to manage Ollama manually you can start it in another terminal, but this is optional — the installer will try to start Ollama when needed.
 
 Main installer commands
 
@@ -94,13 +103,12 @@ python3 -m scripts.install_deps --robot-model "llama3:8b" --assistant-model "lla
 ### Troubleshooting & notes
 
 - The installer prefers an existing Python 3.12 interpreter; it will not try to download or install Python for you. If Python 3.12 is not available install it via your OS package manager or `pyenv` and re-run the installer.
-- If the installer attempted to start Ollama but pulls fail, check the installer log at `~/.local/share/ollama/installer_ollama.log` (if created) and run `ollama serve` manually to inspect output. The installer polls `http://127.0.0.1:11434/api/tags` for readiness when starting the daemon.
+- If the installer attempted to start Ollama but pulls fail, check the installer log at `~/.local/share/ollama/installer_ollama.log` (if created) and start Ollama manually in another terminal to inspect output. The installer polls `http://127.0.0.1:11434/api/tags` for readiness when starting the daemon.
 - Model pulls stream their output to your terminal so you can monitor download progress; failed pulls are reported as warnings and do not abort dependency installation.
 
 ### Manual install (alternative)
 
-If you prefer to set up the environment manually, you can start Ollama yourself
-or let the installer start it for you when you run pulls. Example manual steps:
+If you prefer to set up the environment manually, you can start the Ollama runtime yourself or let the installer start it for you when model pulls are requested. Example manual steps:
 
 ```bash
 # Start Ollama in a separate terminal
@@ -114,7 +122,7 @@ source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -r requirements.txt
 
-# Pull recommended models (optional)
+# Pull recommended models (optional; requires Ollama runtime)
 ollama pull cogito:8b
 ollama pull embeddinggemma:300m
 ```
@@ -139,11 +147,7 @@ make install-deps
 
 ## Quick start (minimal)
 
-1. (Optional) Start Ollama in one terminal, or let the installer start it when needed:
-
-```bash
-ollama serve  # optional — installer can start it automatically
-```
+1. (Optional) Start Ollama in one terminal — this is optional because the installer will attempt to start Ollama automatically when needed.
 
 2. In another terminal:
 
