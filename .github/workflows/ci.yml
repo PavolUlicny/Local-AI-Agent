@@ -20,6 +20,7 @@ jobs:
             py_bin: .venv\\Scripts\\python.exe
     env:
       PY_BIN: ${{ matrix.py_bin }}
+      PIP_CACHE_DIR: .cache/pip
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,10 +30,21 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Ensure pip cache directory (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p .cache/pip
+
+      - name: Ensure pip cache directory (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path -Path .cache\pip)) { New-Item -ItemType Directory -Path .cache\pip | Out-Null }
+
       - name: Cache pip
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
+          path: .cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
