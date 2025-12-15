@@ -150,8 +150,10 @@ def start_ollama_if_needed(wait_seconds: int = 30) -> None:
         print("Ollama server already responding; no need to start.")
         return
 
-    print("ollama CLI found on PATH but server not responding — attempting to start 'ollama serve' in background...")
-    # Start ollama serve detached
+    print(
+        "ollama CLI found on PATH but server not responding — attempting to start the Ollama runtime in background..."
+    )
+    # Start Ollama runtime detached
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     try:
         log = open(os.path.expanduser("~/.local/share/ollama/installer_ollama.log"), "a+")
@@ -170,7 +172,7 @@ def start_ollama_if_needed(wait_seconds: int = 30) -> None:
         # assignment; also print the PID for diagnostics.
         pid = getattr(proc, "pid", None)
         if pid:
-            print(f"Started ollama serve (pid {pid})")
+            print(f"Started Ollama (pid {pid})")
     except FileNotFoundError:
         print("Failed to start Ollama: 'ollama' not found", file=sys.stderr)
         return
@@ -188,7 +190,9 @@ def start_ollama_if_needed(wait_seconds: int = 30) -> None:
             return
         time.sleep(1)
 
-    print(f"Warning: Ollama did not become ready within {wait_seconds}s. Check logs or run 'ollama serve' manually.")
+    print(
+        f"Warning: Ollama did not become ready within {wait_seconds}s. Check logs or start the Ollama runtime manually."
+    )
     if log:
         log.close()
 
