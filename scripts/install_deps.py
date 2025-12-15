@@ -26,7 +26,7 @@ DEFAULT_EMBEDDING = "embeddinggemma:300m"
 
 def run(cmd: Sequence[str]) -> None:
     """Echo and run a subprocess command."""
-    print("→", " ".join(cmd))
+    print("->", " ".join(cmd))
     subprocess.check_call(cmd)
 
 
@@ -76,7 +76,7 @@ def pull_models(models: Sequence[str]) -> None:
         )
         return
     for model in models:
-        print("→", "ollama", "pull", model)
+        print("->", "ollama", "pull", model)
         # Start the pull process and stream its combined stdout/stderr live so
         # the user sees progress as it happens (large model downloads).
         try:
