@@ -9,6 +9,8 @@ This project requires the Ollama runtime. Follow these steps to install it:
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
+> **Security note:** verify installer scripts before piping to a shell; see `docs/security.md` for guidance.
+
 ### Windows
 
 Download and run the Windows installer from the official site: [ollama.com](https://ollama.com)
@@ -19,7 +21,9 @@ Ensure the Ollama runtime is installed first.
 
 ### Python version (required)
 
-**Important:** This project is confirmed to run on **Python 3.12** (tested in CI). Use Python 3.12 when creating the virtual environment and running the installer. On systems with multiple Python versions, invoke the installer with `python3.12 -m scripts.install_deps` (Linux/macOS) or `python -m scripts.install_deps` where `python` points to a Python 3.12 interpreter on Windows. You can also pass `--python python3.12` to the installer to explicitly select the interpreter.
+**Important:** This project is tested on **Python 3.12**. The installer will automatically try to locate and prefer a Python 3.12 interpreter on your system (searches PATH, pyenv shims, and common install locations). You do not need to explicitly run `python3.12 -m scripts.install_deps` — simply running `python3 -m scripts.install_deps` (or `python -m scripts.install_deps` on Windows where `python` points to the desired interpreter) is sufficient when a 3.12 interpreter is present.
+
+If you want to force a specific interpreter, pass `--python /path/to/python` to the installer. We do not attempt to install Python automatically; if Python 3.12 is not available, please install it (for example via your OS package manager, `pyenv`, or the official Windows installer) before running the installer.
 
 Other Python versions (for example, 3.10–3.11 or future releases) are untested and may produce installation or runtime errors.
 
@@ -39,13 +43,16 @@ The repository includes `scripts/install_deps.py`, a small installer that:
 - installs runtime dependencies from `requirements.txt` (and dev deps by default);
 - optionally pulls Ollama models (defaults: `cogito:8b` and `embeddinggemma:300m`).
 
-Start the Ollama server in one terminal:
+You do NOT need to start the Ollama server before running the installer.
+If the `ollama` CLI is available on your `PATH` and the HTTP API is not
+responding, the installer will attempt to start a local Ollama daemon and
+wait briefly for it to become available. If you prefer to manage Ollama
+manually you can still run `ollama serve` in another terminal, but it is not
+required for the installer to work.
 
-```bash
-ollama serve
-```
+Main installer commands
 
-Then run the installer from a second terminal (Linux):
+Linux (recommended):
 
 ```bash
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
@@ -89,9 +96,23 @@ python3 -m scripts.install_deps --robot-model "llama3:8b" --assistant-model "lla
   you pass `--no-pull-models`. If the `ollama` CLI is not on your `PATH` the script prints a
   warning and skips pulls so the installer still succeeds.
 
+### Troubleshooting & notes
+
+- The installer prefers an existing Python 3.12 interpreter; it will not try to
+  download or install Python for you. If Python 3.12 is not available install it
+  via your OS package manager or `pyenv` and re-run the installer.
+- If the installer attempted to start Ollama but pulls fail, check the installer
+  log at `~/.local/share/ollama/installer_ollama.log` (if created) and run
+  `ollama serve` manually to inspect output. The installer polls
+  `http://127.0.0.1:11434/api/tags` for readiness when starting the daemon.
+- Model pulls stream their output to your terminal so you can monitor download
+  progress; failed pulls are reported as warnings and do not abort dependency
+  installation.
+
 ### Manual install (alternative)
 
-If you prefer to set up the environment manually:
+If you prefer to set up the environment manually, you can start Ollama yourself
+or let the installer start it for you when you run pulls. Example manual steps:
 
 ```bash
 # Start Ollama in a separate terminal
@@ -130,10 +151,10 @@ make install-deps
 
 ## Quick start (minimal)
 
-1. Start Ollama in one terminal:
+1. (Optional) Start Ollama in one terminal, or let the installer start it when needed:
 
 ```bash
-ollama serve
+ollama serve  # optional — installer can start it automatically
 ```
 
 2. In another terminal:
