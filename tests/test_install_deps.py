@@ -6,7 +6,7 @@ import scripts.install_deps as inst
 import platform as _platform
 
 
-@pytest.mark.skipif(_platform.system().lower() != "windows", reason="Windows-specific test")
+@pytest.mark.skipif(not _platform.system().lower().startswith("win"), reason="Windows-specific test")
 def test_find_python312_windows_py_launcher(monkeypatch):
     # Simulate no python3.12 on PATH, but a `py` launcher that reports 3.12
     monkeypatch.setattr(inst, "platform", inst.platform)
