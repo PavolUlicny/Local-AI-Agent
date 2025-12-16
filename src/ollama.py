@@ -22,11 +22,17 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import Optional, Any
 
 DEFAULT_PORT = 11434
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_LOG_PATH = "~/.local/share/ollama/installer_ollama.log"
+# Platform-appropriate default log path: on Windows prefer %LOCALAPPDATA%\ollama,
+# on POSIX use the user's XDG-style data dir under ~/.local/share/ollama.
+if os.name == "nt":
+    _local_app = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    DEFAULT_LOG_PATH = os.path.join(_local_app, "ollama", "installer_ollama.log")
+else:
+    DEFAULT_LOG_PATH = "~/.local/share/ollama/installer_ollama.log"
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +57,7 @@ def is_ready(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float 
         return False
 
 
-def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen]:
+def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen[Any]]:
     """Start the Ollama runtime detached and return the Popen object on success.
 
     If `log_path` is provided (or the default), stdout/stderr are redirected
@@ -67,19 +73,38 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen]:
     if log_path is None:
         log_path = DEFAULT_LOG_PATH
     try:
-        log = open(os.path.expanduser(log_path), "a+")
+        expanded = os.path.expanduser(log_path)
+        # Ensure directory exists where possible.
+        try:
+            os.makedirs(os.path.dirname(expanded), exist_ok=True)
+        except Exception:
+            pass
+        log = open(expanded, "a+")
     except Exception:
         logger.debug("Unable to open Ollama log file '%s', proceeding without log file", log_path)
         log = None
 
     try:
-        proc = subprocess.Popen(
-            ["ollama", "serve"],
-            stdout=log or subprocess.DEVNULL,
-            stderr=log or subprocess.STDOUT,
-            start_new_session=True,
-            creationflags=creationflags,
-        )
+        # Start the process with platform-appropriate flags. Avoid using a
+        # dict and `**` expansion so static type checkers can validate the
+        # argument types precisely.
+        stdout_val = log or subprocess.DEVNULL
+        stderr_val = log or subprocess.STDOUT
+        if os.name == "nt":
+            proc = subprocess.Popen(
+                ["ollama", "serve"], stdout=stdout_val, stderr=stderr_val, creationflags=creationflags
+            )
+        else:
+            proc = subprocess.Popen(["ollama", "serve"], stdout=stdout_val, stderr=stderr_val, start_new_session=True)
+
+        # Close our parent-side handle to the logfile to avoid leaking
+        # descriptors; the child process retains its copy created by Popen.
+        if log:
+            try:
+                log.close()
+            except Exception:
+                logger.debug("Failed to close local log file in parent", exc_info=True)
+
         pid = getattr(proc, "pid", None)
         if pid:
             logger.debug("Started Ollama (pid %s)", pid)
