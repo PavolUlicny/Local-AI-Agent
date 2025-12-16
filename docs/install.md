@@ -205,6 +205,8 @@ Recommended: 25+ GB combined memory for smoother context handling and reduced sw
 
 Notes:
 
+- The RAM/VRAM examples above are approximate; actual memory requirements depend on model size, quantization, and workload.
+
 - More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
 - Python: Confirmed to run on Python 3.12 (tested in CI). Other Python versions (for example, 3.10–3.11 or future releases) are untested and not guaranteed to work.
 - OS: Linux is expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
