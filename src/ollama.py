@@ -131,7 +131,7 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen[Any
 
 
 def wait_for_ready(
-    wait_seconds: int = 30, poll_interval: float = 1.0, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT
+    wait_seconds: int = 60, poll_interval: float = 1.0, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT
 ) -> bool:
     """Poll the Ollama HTTP API until it responds or the timeout expires.
 
@@ -147,7 +147,7 @@ def wait_for_ready(
     return False
 
 
-def ensure_available(wait_seconds: int = 30, log_path: str | None = None, poll_interval: float = 1.0) -> bool:
+def ensure_available(wait_seconds: int = 60, log_path: str | None = None, poll_interval: float = 1.0) -> bool:
     """Ensure Ollama is installed and responding.
 
     Returns True when the Ollama HTTP API is responding (either already
@@ -173,7 +173,7 @@ def ensure_available(wait_seconds: int = 30, log_path: str | None = None, poll_i
 
 
 def check_and_start_ollama(
-    wait_seconds: int = 30,
+    wait_seconds: int = 60,
     log_path: str | None = None,
     poll_interval: float = 1.0,
     exit_on_failure: bool = False,
