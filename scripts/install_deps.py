@@ -135,7 +135,7 @@ def ollama_server_ready(host: str = "127.0.0.1", port: int = 11434, timeout: flo
         return False
 
 
-def start_ollama_if_needed(wait_seconds: int = 30) -> None:
+def start_ollama_if_needed(wait_seconds: int = 60) -> None:
     """If `ollama` is on PATH and the server isn't responding, start it.
 
     Start attempts run detached so this script can continue; we poll until
