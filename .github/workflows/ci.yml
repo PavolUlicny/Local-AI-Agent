@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Ensure pip cache directory (Linux/macOS)
+      - name: Ensure pip cache directory (non-Windows)
         if: runner.os != 'Windows'
         run: |
           mkdir -p .cache/pip
