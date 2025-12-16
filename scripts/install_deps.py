@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 import sys
-import platform
 import glob
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -275,23 +274,27 @@ def find_python312() -> str | None:
         if path:
             return path
 
-    # 2) Windows `py` launcher: support `py -3.12` if available (check early)
+    # 2) Windows `py` launcher: support `py -3.12` if available (check early).
+    # Only probe the `py` launcher on Windows hosts — some Unix systems may
+    # have an unrelated `py` binary that does not accept `-3.12` and would
+    # print confusing usage messages during discovery.
     try:
-        py_launcher = shutil.which("py")
-        if py_launcher:
-            try:
-                out = (
-                    subprocess.check_output(
-                        [py_launcher, "-3.12", "-c", "import sys; print(sys.version_info[:2])"],
-                        stderr=subprocess.STDOUT,
+        if os.name == "nt":
+            py_launcher = shutil.which("py")
+            if py_launcher:
+                try:
+                    out = (
+                        subprocess.check_output(
+                            [py_launcher, "-3.12", "-c", "import sys; print(sys.version_info[:2])"],
+                            stderr=subprocess.STDOUT,
+                        )
+                        .decode()
+                        .strip()
                     )
-                    .decode()
-                    .strip()
-                )
-                if "(3, 12)" in out or "3, 12" in out:
-                    return py_launcher
-            except Exception:
-                pass
+                    if "(3, 12)" in out or "3, 12" in out:
+                        return py_launcher
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -335,7 +338,7 @@ def find_python312() -> str | None:
             return c
 
     # 6) Common Windows locations
-    if platform.system().lower().startswith("win"):
+    if os.name == "nt":
         localapp = os.environ.get("LOCALAPPDATA")
         programfiles = os.environ.get("ProgramFiles")
         programfiles_x86 = os.environ.get("ProgramFiles(x86)")
