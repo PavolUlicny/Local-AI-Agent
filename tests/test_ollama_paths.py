@@ -11,7 +11,11 @@ def test_get_default_log_path_posix(monkeypatch):
     p = ollama.get_default_log_path()
     assert "~" not in p
     assert os.path.isabs(p)
-    assert p.startswith("/home/testuser")
+    # Normalize separators and assert the injected HOME appears somewhere
+    # in the returned path. On Windows CI `os.path.abspath` may prefix a
+    # drive letter, so checking 'in' is more robust than 'startswith'.
+    p_norm = p.replace("\\", "/")
+    assert "/home/testuser" in p_norm
     assert p.endswith("installer_ollama.log")
 
 
