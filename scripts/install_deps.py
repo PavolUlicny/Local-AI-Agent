@@ -37,10 +37,17 @@ def venv_python() -> Path:
     return VENV_DIR / bin_dir / exe_name
 
 
-def ensure_venv(python_exe: str) -> Path:
-    """Create .venv if missing and return its python path."""
+def ensure_venv(python_exe: str | Sequence[str]) -> Path:
+    """Create .venv if missing and return its python path.
+
+    `python_exe` may be a string path or a sequence representing a command
+    (for example `['py', '-3.12']` on Windows)."""
     if not VENV_DIR.exists():
-        run([python_exe, "-m", "venv", str(VENV_DIR)])
+        if isinstance(python_exe, (list, tuple)):
+            cmd = list(python_exe) + ["-m", "venv", str(VENV_DIR)]
+        else:
+            cmd = [python_exe, "-m", "venv", str(VENV_DIR)]
+        run(cmd)
     py = venv_python()
     if not py.exists():
         raise RuntimeError(f"venv python missing at {py}")
@@ -350,16 +357,30 @@ def main() -> None:
     # Python 3.12 on the system (PATH, pyenv, common locations). If the user
     # supplied `--python`, respect that explicit choice.
     default_python = "python" if os.name == "nt" else sys.executable
+    python_cmd_prefix: list[str] | None = None
+
     if args.python == default_python:
         py312 = find_python312()
         if py312:
             print(f"Found Python 3.12 at: {py312} — using it to create the venv")
-            args.python = py312
+            # If the discovered interpreter is the Windows `py` launcher
+            # prefer invoking it with `-3.12` so subprocess calls run the
+            # intended interpreter version.
+            if os.path.basename(py312).lower().startswith("py"):
+                python_cmd_prefix = [py312, "-3.12"]
+                args.python = py312
+            else:
+                args.python = py312
 
     # Verify the chosen Python is actually Python 3.12. If not, fail early
     # with an actionable message — we do not try to install Python automatically.
     try:
-        out = subprocess.check_output([args.python, "-c", "import sys; print(sys.version_info[:2])"]).decode().strip()
+        check_cmd = (
+            python_cmd_prefix + ["-c", "import sys; print(sys.version_info[:2])"]
+            if python_cmd_prefix
+            else [args.python, "-c", "import sys; print(sys.version_info[:2])"]
+        )
+        out = subprocess.check_output(check_cmd).decode().strip()
         if "(3, 12)" not in out and "3, 12" not in out:
             print(
                 "Error: Python 3.12 not found. The installer requires Python 3.12.",
@@ -400,7 +421,9 @@ def main() -> None:
         except Exception:
             cfg = None
 
-    py = ensure_venv(args.python)
+    # Create the venv using the resolved interpreter. If we need to use the
+    # Windows `py` launcher, pass the prefix (e.g. ['py','-3.12']).
+    py = ensure_venv(python_cmd_prefix if python_cmd_prefix is not None else args.python)
     run([str(py), "-m", "pip", "install", "-U", "pip"])
 
     files = ["requirements.txt"]
