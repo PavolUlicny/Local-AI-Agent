@@ -102,9 +102,7 @@ Windows (PowerShell):
 ```powershell
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
-# Use the py launcher to select Python 3.12 explicitly when needed
 py -3.12 -m scripts.install_deps
-# activate the venv
 .\.venv\Scripts\Activate.ps1
 ```
 
