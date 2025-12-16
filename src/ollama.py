@@ -37,10 +37,21 @@ def get_default_log_path() -> str:
     On Windows prefer `%LOCALAPPDATA%\\ollama\\installer_ollama.log`, otherwise
     use the POSIX-style `~/.local/share/ollama/installer_ollama.log`.
     """
+    # Return an expanded, absolute path so callers do not need to expand it.
     if os.name == "nt":
         _local_app = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        return os.path.join(_local_app, "ollama", "installer_ollama.log")
-    return "~/.local/share/ollama/installer_ollama.log"
+        path = os.path.join(_local_app, "ollama", "installer_ollama.log")
+    else:
+        # Build the POSIX-style path explicitly and expand the user's home.
+        home = os.path.expanduser("~")
+        path = os.path.join(home, ".local", "share", "ollama", "installer_ollama.log")
+    try:
+        # Normalize to an absolute path
+        return os.path.abspath(os.path.expanduser(path))
+    except Exception:
+        # As a last-resort return the raw path (unlikely), but avoid leaving
+        # an unexpanded ~ in the returned value.
+        return path.replace("~", os.path.expanduser("~"))
 
 
 logger = logging.getLogger(__name__)
