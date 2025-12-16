@@ -38,7 +38,6 @@ def test_find_python312_windows_py_launcher(monkeypatch):
 
     # Ensure unix candidates are ignored so the py launcher path is chosen.
     monkeypatch.setattr(inst.os.path, "exists", lambda p: False)
-    monkeypatch.setattr(inst, "glob", inst.glob)
     monkeypatch.setattr(inst.glob, "glob", lambda p: [])
 
     res = inst.find_python312()
