@@ -46,14 +46,10 @@ python3 -m scripts.install_deps
 - On Windows where `python` may be the correct interpreter or you prefer the `py` launcher:
 
 ```powershell
-# Using the py launcher to select 3.12 explicitly
-py -3.12 -m scripts.install_deps
-
-# Or if `python` already points to 3.12
 python -m scripts.install_deps
 ```
 
-If you want to force a specific interpreter, pass `--python /path/to/python` (or `--python "py -3.12"` on Windows) to the installer. The installer will verify the chosen interpreter is Python 3.12 and will exit with an actionable error if not.
+If you want to force a specific interpreter, pass `--python /path/to/python` (or on Windows an explicit path like `--python "C:\\Python312\\python.exe"`) to the installer. The installer will verify the chosen interpreter is Python 3.12 and will exit with an actionable error if not.
 
 Other Python versions (for example, 3.10–3.11 or future releases) are untested and may produce installation or runtime errors.
 
@@ -102,7 +98,7 @@ Windows (PowerShell):
 ```powershell
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
-py -3.12 -m scripts.install_deps
+python -m scripts.install_deps
 .\.venv\Scripts\Activate.ps1
 ```
 
@@ -111,7 +107,7 @@ Windows (cmd.exe):
 ```cmd
 git clone https://github.com/PavolUlicny/Local-AI-Agent.git
 cd Local-AI-Agent
-py -3.12 -m scripts.install_deps
+python -m scripts.install_deps
 \.venv\Scripts\activate.bat
 ```
 
