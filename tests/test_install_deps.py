@@ -212,6 +212,8 @@ def test_find_python312_via_glob_candidate(monkeypatch):
 def test_start_ollama_posix_launch_and_log_close(monkeypatch, tmp_path):
     # POSIX-specific: ensure start_new_session is used and parent log file closed
     monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/ollama")
+    # Force POSIX path logic so expanduser() uses HOME
+    monkeypatch.setattr(inst.os, "name", "posix")
 
     seq = {"calls": 0}
 
