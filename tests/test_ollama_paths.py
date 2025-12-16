@@ -21,7 +21,7 @@ def test_get_default_log_path_posix(monkeypatch):
 
 def test_get_default_log_path_windows(monkeypatch):
     monkeypatch.setattr(ollama.os, "name", "nt")
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\Test\AppData\Local")
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\\Users\\Test\\AppData\\Local")
 
     p = ollama.get_default_log_path()
     assert "~" not in p
