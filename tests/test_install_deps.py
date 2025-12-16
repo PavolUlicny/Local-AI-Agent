@@ -28,7 +28,9 @@ def test_find_python312_windows_py_launcher(monkeypatch):
             second = cmd[1]
         except Exception:
             raise RuntimeError("unexpected check_output args") from None
-        if str(first).endswith("py") and str(second) in ("-3.12", "-3.12.exe"):
+        # Accept either a bare `py` or a `py.exe` path on Windows
+        first_base = os.path.basename(str(first)).lower()
+        if first_base in ("py", "py.exe") and str(second) in ("-3.12", "-3.12.exe"):
             return b"(3, 12)\n"
         raise RuntimeError(f"unexpected cmd: {cmd}")
 
