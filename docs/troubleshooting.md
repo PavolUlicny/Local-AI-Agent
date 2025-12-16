@@ -1,5 +1,7 @@
 ## Troubleshooting
 
+Note: macOS is not officially supported or tested by this project. Troubleshooting guidance targets Linux and Windows; macOS users may try the Linux steps at their own risk.
+
 | Symptom | Cause | Action |
 | --------- | ------- | -------- |
 | `Model 'xyz' not found` | Ollama model not pulled | `ollama pull xyz` then retry. |
@@ -7,7 +9,7 @@
 | Many rate limit warnings | DDGS provider throttling | Lower concurrency (accept defaults) or narrow `--ddg-backend` to a single engine like `duckduckgo`. |
 | Empty search results | Provider mix mismatch | Retry with a specific backend (`--ddg-backend duckduckgo`/`bing`) or broaden query phrasing. |
 | No new suggestions | Planning chain conservative or truncation | Increase `--max-followup-suggestions` or verify not hitting truncation caps. |
-| `ModuleNotFoundError: No module named 'langchain_community'` | Wrong Python interpreter or deps not installed | Activate the venv and reinstall: Linux: `source .venv/bin/activate && pip install -r requirements.txt`. Run via `python3 -m src.main`. Windows: `.\.venv\Scripts\activate && pip install -r requirements.txt`. Run via `python -m src.main`. |
+| `ModuleNotFoundError: No module named 'langchain_community'` | Wrong Python interpreter or deps not installed | Activate the project venv and reinstall dependencies. Linux: `source .venv/bin/activate && pip install -r requirements.txt` or `./.venv/bin/python -m pip install -r requirements.txt`; run via `./.venv/bin/python -m src.main`. Windows (PowerShell): `.\.venv\Scripts\Activate.ps1; pip install -r requirements.txt` or `.\.venv\Scripts\python -m pip install -r requirements.txt`; run via `.\.venv\Scripts\python -m src.main`. |
 | `pre-commit` alters files locally | Hooks include auto-fixers (ruff). Re-run `git add` after fixes. | Use `pre-commit run --all-files --show-diff-on-failure` in CI modes. |
 | `--log-file` path with spaces fails | Makefile quoting added, but direct CLI still needs quotes | Use `--log-file "/path/with spaces/agent.log"`. |
 
