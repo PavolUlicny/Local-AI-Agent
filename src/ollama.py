@@ -91,15 +91,18 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen[Any
         logger.error("Ollama CLI not found on PATH")
         return None
 
-    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
     log = None
     if log_path is None:
         log_path = get_default_log_path()
     try:
         expanded = os.path.expanduser(log_path)
-        # Ensure directory exists where possible.
+        # Ensure directory exists where possible. Guard against empty
+        # dirname (which can happen for log names without a directory).
         try:
-            os.makedirs(os.path.dirname(expanded), exist_ok=True)
+            dirpath = os.path.dirname(expanded)
+            if dirpath:
+                os.makedirs(dirpath, exist_ok=True)
         except Exception:
             pass
         log = open(expanded, "a+")
