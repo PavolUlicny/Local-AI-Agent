@@ -268,34 +268,7 @@ def find_python312() -> str | None:
         if path:
             return path
 
-    # 2) Look for python3 or python and check version
-    for candidate in (shutil.which("python3"), shutil.which("python")):
-        if candidate:
-            try:
-                out = (
-                    subprocess.check_output([candidate, "-c", "import sys; print(sys.version_info[:2])"])
-                    .decode()
-                    .strip()
-                )
-                if "(3, 12)" in out or "3, 12" in out:
-                    return candidate
-            except Exception:
-                continue
-
-    # 3) pyenv shims / versions
-    try:
-        home = os.path.expanduser("~")
-        pyenv_shim = os.path.join(home, ".pyenv", "shims", "python3.12")
-        if os.path.exists(pyenv_shim):
-            return pyenv_shim
-        for p in glob.glob(os.path.join(home, ".pyenv", "versions", "3.12*")):
-            candidate = os.path.join(p, "bin", "python3.12")
-            if os.path.exists(candidate):
-                return candidate
-    except Exception:
-        pass
-
-    # 3b) Windows `py` launcher: support `py -3.12` if available
+    # 2) Windows `py` launcher: support `py -3.12` if available (check early)
     try:
         py_launcher = shutil.which("py")
         if py_launcher:
@@ -312,7 +285,34 @@ def find_python312() -> str | None:
     except Exception:
         pass
 
-    # 4) Common Unix locations
+    # 3) Look for python3 or python and check version
+    for candidate in (shutil.which("python3"), shutil.which("python")):
+        if candidate:
+            try:
+                out = (
+                    subprocess.check_output([candidate, "-c", "import sys; print(sys.version_info[:2])"])
+                    .decode()
+                    .strip()
+                )
+                if "(3, 12)" in out or "3, 12" in out:
+                    return candidate
+            except Exception:
+                continue
+
+    # 4) pyenv shims / versions
+    try:
+        home = os.path.expanduser("~")
+        pyenv_shim = os.path.join(home, ".pyenv", "shims", "python3.12")
+        if os.path.exists(pyenv_shim):
+            return pyenv_shim
+        for p in glob.glob(os.path.join(home, ".pyenv", "versions", "3.12*")):
+            candidate = os.path.join(p, "bin", "python3.12")
+            if os.path.exists(candidate):
+                return candidate
+    except Exception:
+        pass
+
+    # 5) Common Unix locations
     unix_candidates = [
         "/usr/bin/python3.12",
         "/usr/local/bin/python3.12",
@@ -322,7 +322,7 @@ def find_python312() -> str | None:
         if c and os.path.exists(c):
             return c
 
-    # 5) Common Windows locations
+    # 6) Common Windows locations
     if platform.system().lower().startswith("win"):
         localapp = os.environ.get("LOCALAPPDATA")
         programfiles = os.environ.get("ProgramFiles")
