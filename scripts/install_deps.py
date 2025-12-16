@@ -378,7 +378,7 @@ def main() -> None:
         # platform specifics (log path, subprocess flags) consistently.
         if ollama is not None:
             try:
-                ollama.check_and_start_ollama(wait_seconds=60, exit_on_failure=False)
+                ollama.check_and_start_ollama(exit_on_failure=False)
             except Exception as e:
                 print(f"Warning: unable to start Ollama via src.ollama: {e}", file=sys.stderr)
         else:
