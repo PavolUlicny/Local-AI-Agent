@@ -12,15 +12,25 @@ import glob
 from pathlib import Path
 from typing import Iterable, Sequence
 import importlib
-import time
-import urllib.request
-import urllib.error
-import socket
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV_DIR = ROOT / ".venv"
 DEFAULT_MODEL = "cogito:8b"
 DEFAULT_EMBEDDING = "embeddinggemma:300m"
+
+# Ensure repository root is on sys.path so `src.ollama` can be imported.
+# Use a best-effort import and fall back to `None` so
+# the installer can still run when `src.ollama` isn't importable.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+ollama: ModuleType | None = None
+try:
+    # Import `src.ollama` via importlib so static type checkers see the
+    # variable as `ModuleType | None` rather than an implicitly typed import.
+    ollama = importlib.import_module("src.ollama")
+except Exception:
+    ollama = None
 
 
 def run(cmd: Sequence[str]) -> None:
@@ -65,7 +75,11 @@ def install_files(py: Path, files: Iterable[str]) -> None:
 def pull_models(models: Sequence[str]) -> None:
     if not models:
         return
-    if not shutil.which("ollama"):
+    # Prefer the centralized helper in `src.ollama` when available so OS
+    # detection and install checks remain consistent across the codebase.
+    _ollama = ollama
+
+    if _ollama is None or not getattr(_ollama, "is_installed", lambda: shutil.which("ollama") is not None)():
         print(
             "Ollama CLI not found; model pulls will be skipped.",
             file=sys.stderr,
@@ -121,86 +135,6 @@ def pull_models(models: Sequence[str]) -> None:
         if ret != 0:
             print(f"Warning: failed to pull {model} (exit {ret})", file=sys.stderr)
             continue
-
-
-def ollama_server_ready(host: str = "127.0.0.1", port: int = 11434, timeout: float = 1.0) -> bool:
-    """Return True if the Ollama HTTP API responds at /api/tags.
-
-    Uses a short timeout; intended for polling readiness.
-    """
-    url = f"http://{host}:{port}/api/tags"
-    try:
-        # If we can open the endpoint without raising, consider the server ready.
-        # Avoid returning attributes from a loosely-typed HTTPResponse (which
-        # may be `Any`) to satisfy static type checkers.
-        with urllib.request.urlopen(url, timeout=timeout):
-            return True
-    except urllib.error.URLError:
-        return False
-    except socket.timeout:
-        return False
-
-
-def start_ollama_if_needed(wait_seconds: int = 60) -> None:
-    """If `ollama` is on PATH and the server isn't responding, start it.
-
-    Start attempts run detached so this script can continue; we poll until
-    `wait_seconds` to check readiness. If starting fails, we print a warning
-    and continue — pulls will be skipped if the server never comes up.
-    """
-    if not shutil.which("ollama"):
-        # Nothing to do when ollama CLI isn't installed
-        return
-
-    if ollama_server_ready():
-        print("Ollama server already responding; no need to start.")
-        return
-
-    print(
-        "ollama CLI found on PATH but server not responding — attempting to start the Ollama runtime in background..."
-    )
-    # Start Ollama runtime detached
-    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    try:
-        log = open(os.path.expanduser("~/.local/share/ollama/installer_ollama.log"), "a+")
-    except Exception:
-        log = None
-
-    try:
-        proc = subprocess.Popen(
-            ["ollama", "serve"],
-            stdout=log or subprocess.DEVNULL,
-            stderr=log or subprocess.STDOUT,
-            start_new_session=True,
-            creationflags=creationflags,
-        )
-        # Reference the process so linters won't complain about an unused
-        # assignment; also print the PID for diagnostics.
-        pid = getattr(proc, "pid", None)
-        if pid:
-            print(f"Started Ollama (pid {pid})")
-    except FileNotFoundError:
-        print("Failed to start Ollama: 'ollama' not found", file=sys.stderr)
-        return
-    except Exception as e:
-        print(f"Failed to start Ollama: {e}", file=sys.stderr)
-        return
-
-    # Poll for readiness until timeout
-    deadline = time.time() + float(wait_seconds)
-    while time.time() < deadline:
-        if ollama_server_ready():
-            print("Ollama server is up and responding.")
-            if log:
-                log.close()
-            return
-        time.sleep(1)
-
-    print(
-        f"Warning: Ollama did not become ready within {wait_seconds}s. Check logs or start the Ollama runtime manually."
-    )
-    if log:
-        log.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -413,9 +347,6 @@ def main() -> None:
 
     # Attempt to read configured defaults from the project's AgentConfig (if available).
     cfg = None
-    # Ensure the repository root is on sys.path so `src.config` is importable
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
 
     try:
         cfg_mod = importlib.import_module("src.config")
@@ -443,7 +374,17 @@ def main() -> None:
 
     if args.pull_models:
         # If `ollama` is present on PATH try to start it so pulls can succeed.
-        start_ollama_if_needed()
+        # Delegate to the centralized helper in `src.ollama` which handles
+        # platform specifics (log path, subprocess flags) consistently.
+        if ollama is not None:
+            try:
+                ollama.check_and_start_ollama(wait_seconds=60, exit_on_failure=False)
+            except Exception as e:
+                print(f"Warning: unable to start Ollama via src.ollama: {e}", file=sys.stderr)
+        else:
+            # If `src.ollama` wasn't importable, proceed without attempting
+            # to start the runtime (the later pull will detect absence).
+            pass
         # Resolve final model names: prefer CLI args, then project config, then built-in defaults.
         robot_model = args.robot_model or (getattr(cfg, "robot_model", None) if cfg else DEFAULT_MODEL)
         assistant_model = args.assistant_model or (getattr(cfg, "assistant_model", None) if cfg else DEFAULT_MODEL)
