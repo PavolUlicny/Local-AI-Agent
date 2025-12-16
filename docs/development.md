@@ -17,7 +17,7 @@ pip install -r requirements-dev.txt
 Windows (PowerShell):
 
 ```powershell
-py -3.12 -m venv .venv
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 ```
@@ -58,8 +58,16 @@ Windows (PowerShell / cmd):
 
 Run tests using the venv Python to ensure the interpreter and installed deps match CI:
 
+Linux:
+
 ```bash
 ./.venv/bin/python -m pytest -q
+```
+
+Windows (PowerShell / cmd):
+
+```powershell
+\.venv\Scripts\python -m pytest -q
 ```
 
 ### Run via module entrypoint (recommended)
