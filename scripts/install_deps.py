@@ -371,10 +371,12 @@ def main() -> None:
         py312 = find_python312()
         if py312:
             print(f"Found Python 3.12 at: {py312} — using it to create the venv")
-            # If the discovered interpreter is the Windows `py` launcher
-            # prefer invoking it with `-3.12` so subprocess calls run the
-            # intended interpreter version.
-            if os.path.basename(py312).lower().startswith("py"):
+            # If the discovered interpreter is the Windows `py` launcher (exact
+            # name `py` or `py.exe`) prefer invoking it with `-3.12` so
+            # subprocess calls run the intended interpreter version. Avoid
+            # matching `python3.12` which also starts with "py".
+            base = os.path.basename(py312).lower()
+            if base in ("py", "py.exe"):
                 python_cmd_prefix = [py312, "-3.12"]
                 args.python = py312
             else:
