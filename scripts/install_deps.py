@@ -281,7 +281,10 @@ def find_python312() -> str | None:
         if py_launcher:
             try:
                 out = (
-                    subprocess.check_output([py_launcher, "-3.12", "-c", "import sys; print(sys.version_info[:2])"])
+                    subprocess.check_output(
+                        [py_launcher, "-3.12", "-c", "import sys; print(sys.version_info[:2])"],
+                        stderr=subprocess.STDOUT,
+                    )
                     .decode()
                     .strip()
                 )
@@ -297,7 +300,9 @@ def find_python312() -> str | None:
         if candidate:
             try:
                 out = (
-                    subprocess.check_output([candidate, "-c", "import sys; print(sys.version_info[:2])"])
+                    subprocess.check_output(
+                        [candidate, "-c", "import sys; print(sys.version_info[:2])"], stderr=subprocess.STDOUT
+                    )
                     .decode()
                     .strip()
                 )
