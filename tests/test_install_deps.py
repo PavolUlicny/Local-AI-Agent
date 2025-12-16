@@ -9,8 +9,8 @@ import os
 @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
 def test_find_python312_windows_py_launcher(monkeypatch):
     # Simulate no python3.12 on PATH, but a `py` launcher that reports 3.12
-    monkeypatch.setattr(inst, "platform", inst.platform)
-    monkeypatch.setattr(inst.platform, "system", lambda: "Windows")
+    # Use `os.name` to simulate Windows rather than monkeypatching `platform`.
+    monkeypatch.setattr(inst.os, "name", "nt")
 
     def fake_which(name):
         if name == "py":
