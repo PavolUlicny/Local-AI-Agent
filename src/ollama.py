@@ -42,8 +42,11 @@ def get_default_log_path() -> str:
         _local_app = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         path = os.path.join(_local_app, "ollama", "installer_ollama.log")
     else:
-        # Build the POSIX-style path explicitly and expand the user's home.
-        home = os.path.expanduser("~")
+        # Build the POSIX-style path explicitly. Prefer the `HOME` env var
+        # when present so callers/tests can override the location even when
+        # running on non-POSIX hosts (e.g., Windows CI). Fall back to the
+        # platform `expanduser` semantics if `HOME` is not set.
+        home = os.environ.get("HOME") or os.path.expanduser("~")
         path = os.path.join(home, ".local", "share", "ollama", "installer_ollama.log")
     try:
         # Normalize to an absolute path
