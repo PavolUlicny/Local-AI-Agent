@@ -295,6 +295,23 @@ def find_python312() -> str | None:
     except Exception:
         pass
 
+    # 3b) Windows `py` launcher: support `py -3.12` if available
+    try:
+        py_launcher = shutil.which("py")
+        if py_launcher:
+            try:
+                out = (
+                    subprocess.check_output([py_launcher, "-3.12", "-c", "import sys; print(sys.version_info[:2])"])
+                    .decode()
+                    .strip()
+                )
+                if "(3, 12)" in out or "3, 12" in out:
+                    return py_launcher
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     # 4) Common Unix locations
     unix_candidates = [
         "/usr/bin/python3.12",
