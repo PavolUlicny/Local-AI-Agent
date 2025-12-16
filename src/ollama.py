@@ -26,13 +26,22 @@ from typing import Optional, Any
 
 DEFAULT_PORT = 11434
 DEFAULT_HOST = "127.0.0.1"
-# Platform-appropriate default log path: on Windows prefer %LOCALAPPDATA%\ollama,
-# on POSIX use the user's XDG-style data dir under ~/.local/share/ollama.
-if os.name == "nt":
-    _local_app = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    DEFAULT_LOG_PATH = os.path.join(_local_app, "ollama", "installer_ollama.log")
-else:
-    DEFAULT_LOG_PATH = "~/.local/share/ollama/installer_ollama.log"
+
+
+# Platform-appropriate default log path: compute lazily so callers/tests can
+# change `os.name` or environment variables at runtime and have the helper
+# reflect the current platform/environment rather than the import-time value.
+def get_default_log_path() -> str:
+    """Return a platform-appropriate default logfile path for Ollama.
+
+    On Windows prefer `%LOCALAPPDATA%\\ollama\\installer_ollama.log`, otherwise
+    use the POSIX-style `~/.local/share/ollama/installer_ollama.log`.
+    """
+    if os.name == "nt":
+        _local_app = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return os.path.join(_local_app, "ollama", "installer_ollama.log")
+    return "~/.local/share/ollama/installer_ollama.log"
+
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +80,7 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen[Any
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     log = None
     if log_path is None:
-        log_path = DEFAULT_LOG_PATH
+        log_path = get_default_log_path()
     try:
         expanded = os.path.expanduser(log_path)
         # Ensure directory exists where possible.
