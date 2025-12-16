@@ -124,38 +124,6 @@ def test_find_python312_detects_candidate(monkeypatch):
     assert found is not None
 
 
-def test_start_ollama_if_needed_starts(monkeypatch, tmp_path, capsys):
-    # Simulate `ollama` on PATH
-    monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/ollama")
-
-    # Simulate server readiness only after a couple of polls
-    state = {"calls": 0}
-
-    def fake_ready(host="127.0.0.1", port=11434, timeout=1.0):
-        state["calls"] += 1
-        # Become ready on the 2nd call
-        return state["calls"] >= 2
-
-    monkeypatch.setattr(inst.ollama, "is_ready", fake_ready)
-
-    # Instead of re-testing internal start/wait mechanics (covered by
-    # tests/test_ollama*), assert the installer delegates to the centralized
-    # helper. Patch `check_and_start_ollama` and verify it's called.
-    called = {"n": 0, "args": None}
-
-    def fake_check_and_start(wait_seconds=3, exit_on_failure=False):
-        called["n"] += 1
-        called["args"] = (wait_seconds, exit_on_failure)
-        return True
-
-    monkeypatch.setattr(inst.ollama, "check_and_start_ollama", fake_check_and_start)
-
-    # Call the helper via the installer module to simulate integration point.
-    res = inst.ollama.check_and_start_ollama(wait_seconds=3, exit_on_failure=False)
-    assert res is True
-    assert called["n"] == 1
-
-
 def test_ensure_venv_on_linux(monkeypatch, tmp_path):
     # Simulate POSIX environment and ensure venv created under bin/
     monkeypatch.setattr(inst.os, "name", "posix")
@@ -193,24 +161,6 @@ def test_find_python312_via_glob_candidate(monkeypatch):
     assert "/usr/bin/python3.12" in found
 
 
-def test_start_ollama_posix_launch_and_log_close(monkeypatch, tmp_path):
-    # This behavior is covered by tests/test_ollama_platform.py. Here we
-    # assert the installer delegates to the centralized helper instead of
-    # re-testing internal popen/log handling.
-    monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/ollama")
-    called = {"n": 0}
-
-    def fake_check_and_start(wait_seconds=3, exit_on_failure=False):
-        called["n"] += 1
-        return True
-
-    monkeypatch.setattr(inst.ollama, "check_and_start_ollama", fake_check_and_start)
-
-    res = inst.ollama.check_and_start_ollama(wait_seconds=3, exit_on_failure=False)
-    assert res is True
-    assert called["n"] == 1
-
-
 def test_pull_models_nonfatal_on_failure(monkeypatch, capsys):
     # Simulate ollama present but pull fails; installer should not raise
     monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/ollama")
@@ -236,20 +186,3 @@ def test_pull_models_nonfatal_on_failure(monkeypatch, capsys):
 
     captured = capsys.readouterr()
     assert captured.err != ""
-
-
-def test_start_ollama_polling_behavior(monkeypatch):
-    # Delegation-only test: ensure installer calls into the centralized
-    # helper. Detailed polling behavior is tested in
-    # tests/test_ollama_platform.py.
-    monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/ollama")
-    called = {"n": 0}
-
-    def fake_check_and_start(wait_seconds=5, exit_on_failure=False):
-        called["n"] += 1
-        return True
-
-    monkeypatch.setattr(inst.ollama, "check_and_start_ollama", fake_check_and_start)
-    res = inst.ollama.check_and_start_ollama(wait_seconds=5, exit_on_failure=False)
-    assert res is True
-    assert called["n"] == 1
