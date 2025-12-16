@@ -21,9 +21,16 @@ def test_find_python312_windows_py_launcher(monkeypatch):
 
     def fake_check_output(cmd, stderr=None):
         # emulate: py -3.12 -c 'import sys; print(sys.version_info[:2])'
-        if cmd[0].endswith("py") and cmd[1] == "-3.12":
+        # Accept flexible call signatures and command shapes used by
+        # different Python versions / platforms.
+        try:
+            first = cmd[0]
+            second = cmd[1]
+        except Exception:
+            raise RuntimeError("unexpected check_output args") from None
+        if str(first).endswith("py") and str(second) in ("-3.12", "-3.12.exe"):
             return b"(3, 12)\n"
-        raise RuntimeError("unexpected")
+        raise RuntimeError(f"unexpected cmd: {cmd}")
 
     monkeypatch.setattr(inst.subprocess, "check_output", fake_check_output)
 
@@ -33,8 +40,8 @@ def test_find_python312_windows_py_launcher(monkeypatch):
     monkeypatch.setattr(inst.glob, "glob", lambda p: [])
 
     res = inst.find_python312()
-    if res is None:
-        pytest.skip("py launcher detection not reproducible in this environment")
+    # The test must run on Windows CI; assert we find the py launcher.
+    assert res is not None, "Expected py launcher to be detected but find_python312 returned None"
     assert res.lower().endswith("py.exe")
 
 
