@@ -67,7 +67,7 @@ Linux:
 Windows (PowerShell / cmd):
 
 ```powershell
-\.venv\Scripts\python -m pytest -q
+.\.venv\Scripts\python -m pytest -q
 ```
 
 ### Run via module entrypoint (recommended)
