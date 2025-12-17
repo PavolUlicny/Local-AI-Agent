@@ -9,7 +9,6 @@ Note: macOS is not officially supported or tested by this project. The instructi
 Linux:
 
 ```bash
-python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
@@ -17,7 +16,6 @@ pip install -r requirements-dev.txt
 Windows (PowerShell):
 
 ```powershell
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 ```
