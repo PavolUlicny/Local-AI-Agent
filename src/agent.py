@@ -26,11 +26,9 @@ for each extracted piece.
 from __future__ import annotations
 
 from typing import Any, List, Set, TYPE_CHECKING, cast, Callable
-from dataclasses import dataclass
 import importlib
 import logging
 import sys
-from datetime import datetime, timezone
 from typing import TextIO
 
 PromptSession: Any | None
@@ -41,11 +39,13 @@ if TYPE_CHECKING:
     from prompt_toolkit.history import InMemoryHistory as InMemoryHistoryType
     from src.search_orchestrator import SearchOrchestrator as SearchOrchestratorType
     from src.topic_utils import Topic as TopicType
+    from src.context import QueryContext as QueryContextType
 else:
     PromptSessionType = Any
     InMemoryHistoryType = Any
     SearchOrchestratorType = Any
     TopicType = Any
+    QueryContextType = Any
 
 try:
     from prompt_toolkit import PromptSession as _PromptSession
@@ -89,118 +89,15 @@ except ModuleNotFoundError as exc:  # fallback when imported as top-level module
     _topic_utils_mod = importlib.import_module("topic_utils")
     _model_utils_mod = importlib.import_module("model_utils")
 
+try:
+    _context_mod = importlib.import_module("src.context")
+except ModuleNotFoundError:
+    _context_mod = importlib.import_module("context")
+QueryContext = _context_mod.QueryContext
+build_query_context = _context_mod.build_query_context
+
 
 class Agent:
-    @dataclass(frozen=True)
-    class QueryContext:
-        current_datetime: str
-        current_year: str
-        current_month: str
-        current_day: str
-        question_keywords: List[str]
-        question_embedding: List[float] | None
-        selected_topic_index: int | None
-        recent_history: list
-        topic_keywords: Set[str]
-        topic_brief_text: str
-        topic_embedding_current: List[float] | None
-        recent_for_prompt: list
-        conversation_text: str
-        prior_responses_text: str
-
-    def _build_query_context(self, user_query: str) -> "Agent.QueryContext":
-        cfg = self.cfg
-        current_datetime = _text_utils_mod.current_datetime_utc()
-        dt_obj = datetime.now(timezone.utc)
-        current_year = str(dt_obj.year)
-        current_month = f"{dt_obj.month:02d}"
-        current_day = f"{dt_obj.day:02d}"
-        question_keywords = _keywords_mod.extract_keywords(user_query)
-        question_embedding = self.embedding_client.embed(user_query)
-        try:
-            selected_topic_index, recent_history, topic_keywords = _topic_utils_mod.select_topic(
-                self.chains["context"],
-                self.topics,
-                user_query,
-                question_keywords,
-                cfg.max_context_turns,
-                current_datetime,
-                current_year,
-                current_month,
-                current_day,
-                question_embedding=question_embedding,
-                embedding_threshold=cfg.embedding_similarity_threshold,
-            )
-        except _exceptions.ResponseError as exc:  # Robot model not found, etc.
-            message = str(exc)
-            if "not found" in message.lower():
-                _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
-                return Agent.QueryContext(
-                    current_datetime,
-                    current_year,
-                    current_month,
-                    current_day,
-                    question_keywords,
-                    question_embedding,
-                    None,
-                    [],
-                    set(question_keywords),
-                    "",
-                    None,
-                    [],
-                    "No prior relevant conversation.",
-                    "No prior answers for this topic.",
-                )
-            selected_topic_index = None
-            recent_history = []
-            topic_keywords = set(question_keywords)
-        except Exception as exc:  # graceful fallback
-            logging.warning(f"Context classification failed; proceeding without topic selection. Error: {exc}")
-            selected_topic_index = None
-            recent_history = []
-            topic_keywords = set(question_keywords)
-        topic_brief_text = ""
-        if selected_topic_index is not None and selected_topic_index < len(self.topics):
-            topic_brief_text = _topic_utils_mod.topic_brief(self.topics[selected_topic_index])
-        topic_embedding_current: List[float] | None = None
-        if selected_topic_index is not None and selected_topic_index < len(self.topics):
-            topic_embedding_current = self.topics[selected_topic_index].embedding
-        recent_for_prompt = _topic_utils_mod.tail_turns(recent_history, _text_utils_mod.MAX_PROMPT_RECENT_TURNS)
-        conversation_text = _topic_utils_mod.format_turns(recent_for_prompt, "No prior relevant conversation.")
-        if topic_brief_text:
-            conversation_text = f"Topic brief:\n{topic_brief_text}\n\nRecent turns:\n{conversation_text}"
-        conversation_text = _text_utils_mod.truncate_text(
-            conversation_text, self._char_budget(_text_utils_mod.MAX_CONVERSATION_CHARS)
-        )
-        prior_responses_text = (
-            _topic_utils_mod.collect_prior_responses(
-                self.topics[selected_topic_index], max_chars=_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS
-            )
-            if selected_topic_index is not None
-            else "No prior answers for this topic."
-        )
-        if topic_brief_text:
-            prior_responses_text = f"{topic_brief_text}\n\nRecent answers:\n{prior_responses_text}"
-        prior_responses_text = _text_utils_mod.truncate_text(
-            prior_responses_text, self._char_budget(_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS)
-        )
-        return Agent.QueryContext(
-            current_datetime,
-            current_year,
-            current_month,
-            current_day,
-            question_keywords,
-            question_embedding,
-            selected_topic_index,
-            recent_history,
-            topic_keywords,
-            topic_brief_text,
-            topic_embedding_current,
-            recent_for_prompt,
-            conversation_text,
-            prior_responses_text,
-        )
-
     def __init__(self, cfg: AgentConfig, *, output_stream: TextIO | None = None, is_tty: bool | None = None):
         self.cfg = cfg
         self.llm_robot, self.llm_assistant = _chains.build_llms(cfg)
@@ -394,7 +291,7 @@ class Agent:
             # otherwise re-raise for the caller to handle
             raise
 
-    def _decide_should_search(self, ctx: "Agent.QueryContext", user_query: str, prior_responses_text: str) -> bool:
+    def _decide_should_search(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> bool:
         """Run the `search_decision` classifier and return True when it decides SEARCH.
 
         This helper performs the chain invoke and validation. It does not swallow
@@ -418,7 +315,7 @@ class Agent:
         )
         return decision_validated == "SEARCH"
 
-    def _generate_search_seed(self, ctx: "Agent.QueryContext", user_query: str, prior_responses_text: str) -> str:
+    def _generate_search_seed(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> str:
         """Invoke the `seed` chain and pick a seed query. May raise ResponseError to be
         handled by the caller in the same way as the original code.
         """
@@ -440,7 +337,7 @@ class Agent:
 
     def _run_search_rounds(
         self,
-        ctx: "Agent.QueryContext",
+        ctx: "QueryContextType",
         user_query: str,
         should_search: bool,
         primary_search_query: str,
@@ -730,7 +627,7 @@ class Agent:
     def _handle_query_core(self, user_query: str, one_shot: bool) -> str | None:
         self._clear_error()
         self._reset_rebuild_counts()
-        ctx = self._build_query_context(user_query)
+        ctx = build_query_context(self, user_query)
         cfg = self.cfg
         current_datetime = ctx.current_datetime
         current_year = ctx.current_year
