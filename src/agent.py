@@ -101,6 +101,11 @@ try:
 except ModuleNotFoundError:
     _agent_utils_mod = importlib.import_module("agent_utils")
 agent_utils = _agent_utils_mod
+try:
+    _search_mod = importlib.import_module("src.search")
+except ModuleNotFoundError:
+    _search_mod = importlib.import_module("search")
+search = _search_mod
 
 
 class Agent:
@@ -201,20 +206,9 @@ class Agent:
             embedding_client.close()
 
     def _build_search_orchestrator(self) -> SearchOrchestratorType:
-        return cast(
-            SearchOrchestratorType,
-            _search_orchestrator_mod.SearchOrchestrator(
-                self.cfg,
-                ddg_results=self._ddg_results,
-                embedding_client=self.embedding_client,
-                context_similarity=self._context_similarity,
-                inputs_builder=self._inputs,
-                reduce_context_and_rebuild=self._reduce_context_and_rebuild,
-                rebuild_counts=self.rebuild_counts,
-                char_budget=self._char_budget,
-                mark_error=self._mark_error,
-            ),
-        )
+        # Delegate to `src.search.build_search_orchestrator` to keep orchestration
+        # code outside the `Agent` class for easier testing and separation.
+        return cast(SearchOrchestratorType, search.build_search_orchestrator(self))
 
     def _print_welcome_banner(self) -> None:
         message = "\n".join(
@@ -338,23 +332,20 @@ class Agent:
         callsite in `_handle_query_core` is easier to test and reason about.
         It may raise `_search_orchestrator_mod.SearchAbort` which callers should handle.
         """
-        orchestrator: SearchOrchestratorType = self._build_search_orchestrator()
-        aggregated_results, topic_keywords = orchestrator.run(
-            chains=self.chains,
-            should_search=should_search,
-            user_query=user_query,
-            current_datetime=ctx.current_datetime,
-            current_year=ctx.current_year,
-            current_month=ctx.current_month,
-            current_day=ctx.current_day,
-            conversation_text=ctx.conversation_text,
-            prior_responses_text=ctx.prior_responses_text,
-            question_embedding=question_embedding,
-            topic_embedding_current=topic_embedding_current,
-            topic_keywords=topic_keywords,
-            primary_search_query=primary_search_query,
+        # Delegate search orchestration to the `src.search` module.
+        return cast(
+            tuple[List[str], Set[str]],
+            search.run_search_rounds(
+                self,
+                ctx,
+                user_query,
+                should_search,
+                primary_search_query,
+                question_embedding,
+                topic_embedding_current,
+                topic_keywords,
+            ),
         )
-        return aggregated_results, topic_keywords
 
     def _build_resp_inputs(
         self,
