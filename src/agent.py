@@ -111,6 +111,11 @@ try:
 except ModuleNotFoundError:
     _response_mod = importlib.import_module("response")
 response = _response_mod
+try:
+    _topics_mod = importlib.import_module("src.topics")
+except ModuleNotFoundError:
+    _topics_mod = importlib.import_module("topics")
+topics = _topics_mod
 
 
 class Agent:
@@ -415,17 +420,19 @@ class Agent:
 
         Returns the selected topic index (or None) as the underlying method does.
         """
+        # Delegate to `src.topics.update_topics` to keep topic-related logic
+        # isolated and easier to unit test.
         return cast(
             int | None,
-            self.topic_manager.update_topics(
-                topics=self.topics,
-                selected_topic_index=selected_topic_index,
-                topic_keywords=topic_keywords,
-                question_keywords=question_keywords,
-                aggregated_results=aggregated_results,
-                user_query=user_query,
-                response_text=response_text,
-                question_embedding=question_embedding,
+            topics.update_topics(
+                self,
+                selected_topic_index,
+                topic_keywords,
+                question_keywords,
+                aggregated_results,
+                user_query,
+                response_text,
+                question_embedding,
             ),
         )
 
