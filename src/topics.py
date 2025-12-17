@@ -8,12 +8,6 @@ This thin wrapper makes it easy to unit test topic update logic in isolation.
 from __future__ import annotations
 
 from typing import Any, List, Set
-import importlib
-
-try:
-    _topic_utils = importlib.import_module("src.topic_utils")
-except ModuleNotFoundError:
-    _topic_utils = importlib.import_module("topic_utils")
 
 
 def update_topics(
