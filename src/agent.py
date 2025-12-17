@@ -1,28 +1,3 @@
-"""Agent orchestration and helper decompositions.
-
-This module implements the top-level `Agent` class which orchestrates user
-queries, context selection, optional web search orchestration, and final
-response generation. The implementation has been refactored into small,
-testable helpers to keep control flow clear and to improve unit test
-coverage:
-
-- `QueryContext`: a dataclass capturing computed context values (datetime,
-    conversation summary, embeddings, selected topic, etc.).
-- `_invoke_chain_safe`: centralized chain invocation with rebuild-on-context-
-    length handling and consistent ResponseError propagation.
-- `_decide_should_search`, `_generate_search_seed`: encapsulate LLM-driven
-    classification and seed selection logic.
-- `_run_search_rounds`: thin wrapper around `SearchOrchestrator.run`.
-- `_generate_and_stream_response`: centralized response streaming with
-    injectable `write_fn` for tests.
-- `_build_resp_inputs`: builds the inputs for the final response chain and
-    chooses between `response` and `response_no_search` chains.
-
-Interactive prompt/session handling is delegated to `src.input_handler.InputHandler`.
-The refactor preserves runtime behavior while enabling focused unit tests
-for each extracted piece.
-"""
-
 from __future__ import annotations
 
 from typing import Any, List, Set, TYPE_CHECKING, cast, Callable
@@ -71,7 +46,6 @@ try:
     _search_orchestrator_mod = importlib.import_module("src.search_orchestrator")
     _topic_manager_mod = importlib.import_module("src.topic_manager")
     _text_utils_mod = importlib.import_module("src.text_utils")
-    _keywords_mod = importlib.import_module("src.keywords")
     _topic_utils_mod = importlib.import_module("src.topic_utils")
     _model_utils_mod = importlib.import_module("src.model_utils")
 except ModuleNotFoundError as exc:  # fallback when imported as top-level module
@@ -85,7 +59,6 @@ except ModuleNotFoundError as exc:  # fallback when imported as top-level module
     _search_orchestrator_mod = importlib.import_module("search_orchestrator")
     _topic_manager_mod = importlib.import_module("topic_manager")
     _text_utils_mod = importlib.import_module("text_utils")
-    _keywords_mod = importlib.import_module("keywords")
     _topic_utils_mod = importlib.import_module("topic_utils")
     _model_utils_mod = importlib.import_module("model_utils")
 
