@@ -1,6 +1,6 @@
 ## Continuous Integration (CI)
 
-The repository includes a GitHub Actions workflow at `.github/workflows/ci.yml` that runs on pushes and pull requests to `main`.
+The repository includes a GitHub Actions workflow at `.github/workflows/ci.yml` that runs on pushes and pull requests across branches (the workflow runs on push and pull_request events for all branches).
 
 CI performs the following high-level steps:
 

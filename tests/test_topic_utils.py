@@ -24,14 +24,16 @@ def test_cosine_similarity_handles_matching_and_orthogonal_vectors() -> None:
     assert TU.cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
 
 
-def test_blend_embeddings_respects_decay() -> None:
-    blended = TU.blend_embeddings([1.0, 0.0], [0.0, 1.0], decay=0.5)
-    assert blended == pytest.approx([0.5, 0.5])
-
-
-def test_blend_embeddings_expands_to_longer_vector() -> None:
-    blended = TU.blend_embeddings([1.0], [0.0, 1.0, 2.0], decay=0.2)
-    assert blended == pytest.approx([0.2, 0.8, 1.6])
+@pytest.mark.parametrize(
+    "a,b,decay,expected",
+    [
+        ([1.0, 0.0], [0.0, 1.0], 0.5, [0.5, 0.5]),
+        ([1.0], [0.0, 1.0, 2.0], 0.2, [0.2, 0.8, 1.6]),
+    ],
+)
+def test_blend_embeddings_variants(a, b, decay, expected) -> None:
+    blended = TU.blend_embeddings(a, b, decay=decay)
+    assert blended == pytest.approx(expected)
 
 
 def test_prune_keywords_keeps_most_frequent_terms() -> None:

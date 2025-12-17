@@ -1,9 +1,17 @@
-SHELL := /bin/bash
+# Cross-platform venv python/pip selection
+ifeq ($(OS),Windows_NT)
+	# On Windows use the Scripts path
+	PY := .venv\\Scripts\\python.exe
+	PIP := .venv\\Scripts\\pip.exe
+	CURL := curl -fsS
+else
+	SHELL := /bin/bash
 
-# Configuration
-PY                  := .venv/bin/python
-PIP                 := .venv/bin/pip
-CURL                := curl -fsS
+	# Configuration (Unix-like)
+	PY := .venv/bin/python
+	PIP := .venv/bin/pip
+	CURL := curl -fsS
+endif
 # Make variables aligned with CLI flag names (hyphens → underscores). Short aliases noted for quick lookup.
 QUESTION            ?= # --question / --q
 MAX_ROUNDS          ?= # --max-rounds / --mr
@@ -81,13 +89,17 @@ EXTRA_ARGS += $(if $(ASSISTANT_MODEL), --assistant-model $(ASSISTANT_MODEL))
 
 EXTRA_MODEL_ARGS :=
 
-.PHONY: help venv install dev-setup pull-model serve-ollama run ask run-no-search run-search check-ollama check smoke clean
+.PHONY: help venv install dev-setup pull-model serve-ollama run ask run-no-search run-search check-ollama check smoke clean typecheck
 
 help: ## Show available targets
 	@awk 'BEGIN{FS":.*?## "};/^[a-zA-Z0-9_.-]+:.*?## /{printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 venv: ## Create local virtualenv at .venv if missing
-	@test -d .venv || python3 -m venv .venv
+	ifeq ($(OS),Windows_NT)
+		@test -d .venv || python -m venv .venv
+	else
+		@test -d .venv || python3 -m venv .venv
+	endif
 	@$(PIP) install -U pip
 
 install: venv ## Install project dependencies
@@ -95,6 +107,11 @@ install: venv ## Install project dependencies
 
 install-dev: venv ## Install runtime and dev dependencies (pinned by constraints)
 	@$(PIP) install -r requirements.txt -r requirements-dev.txt
+
+
+typecheck: venv ## Run type checking and linting
+	@$(PY) -m mypy
+	@$(PY) -m ruff check .
 
 dev-setup: install pull-model ## Install deps and pull configured role models
 
@@ -133,7 +150,16 @@ run-search: ## One-shot with web search
 	@$(PY) -m src.main $(EXTRA_MODEL_ARGS) --force-search --question "$(QUESTION)" $(EXTRA_ARGS)
 
 check-ollama: ## Check Ollama server and list local models
-	@$(CURL) http://localhost:11434/api/tags | head -c 400 && echo || { echo "Ollama not responding on :11434"; exit 1; }
+	ifeq ($(OS),Windows_NT)
+		@powershell -Command "try { (Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -UseBasicParsing).Content.Substring(0,400); exit 0 } catch { Write-Error 'Ollama not responding on :11434'; exit 1 }"
+	else
+		@$(PY) -c "import urllib.request,sys;\
+try:\
+    data=urllib.request.urlopen('http://localhost:11434/api/tags',timeout=1).read(400);\
+    sys.stdout.buffer.write(data if isinstance(data,bytes) else data.encode());\
+except Exception:\
+    sys.stderr.write('Ollama not responding on :11434\n'); sys.exit(1)"
+	endif
 
 check: ## Quick import check of agent + config
 	@$(PY) -c "from src.config import AgentConfig; from src.agent import Agent; cfg=AgentConfig(no_auto_search=True, question='healthcheck'); Agent(cfg); print('OK')"

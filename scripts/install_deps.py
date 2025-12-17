@@ -8,25 +8,34 @@ import os
 import shutil
 import subprocess
 import sys
-import platform
 import glob
 from pathlib import Path
 from typing import Iterable, Sequence
 import importlib
-import time
-import urllib.request
-import urllib.error
-import socket
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV_DIR = ROOT / ".venv"
 DEFAULT_MODEL = "cogito:8b"
 DEFAULT_EMBEDDING = "embeddinggemma:300m"
 
+# Ensure repository root is on sys.path so `src.ollama` can be imported.
+# Use a best-effort import and fall back to `None` so
+# the installer can still run when `src.ollama` isn't importable.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+ollama: ModuleType | None = None
+try:
+    # Import `src.ollama` via importlib so static type checkers see the
+    # variable as `ModuleType | None` rather than an implicitly typed import.
+    ollama = importlib.import_module("src.ollama")
+except Exception:
+    ollama = None
+
 
 def run(cmd: Sequence[str]) -> None:
     """Echo and run a subprocess command."""
-    print("→", " ".join(cmd))
+    print("->", " ".join(cmd))
     subprocess.check_call(cmd)
 
 
@@ -37,10 +46,17 @@ def venv_python() -> Path:
     return VENV_DIR / bin_dir / exe_name
 
 
-def ensure_venv(python_exe: str) -> Path:
-    """Create .venv if missing and return its python path."""
+def ensure_venv(python_exe: str | Sequence[str]) -> Path:
+    """Create .venv if missing and return its python path.
+
+    `python_exe` may be a string path or a sequence representing a command
+    (for example `['py', '-3.12']` on Windows)."""
     if not VENV_DIR.exists():
-        run([python_exe, "-m", "venv", str(VENV_DIR)])
+        if isinstance(python_exe, (list, tuple)):
+            cmd = list(python_exe) + ["-m", "venv", str(VENV_DIR)]
+        else:
+            cmd = [python_exe, "-m", "venv", str(VENV_DIR)]
+        run(cmd)
     py = venv_python()
     if not py.exists():
         raise RuntimeError(f"venv python missing at {py}")
@@ -59,7 +75,11 @@ def install_files(py: Path, files: Iterable[str]) -> None:
 def pull_models(models: Sequence[str]) -> None:
     if not models:
         return
-    if not shutil.which("ollama"):
+    # Prefer the centralized helper in `src.ollama` when available so OS
+    # detection and install checks remain consistent across the codebase.
+    _ollama = ollama
+
+    if _ollama is None or not getattr(_ollama, "is_installed", lambda: shutil.which("ollama") is not None)():
         print(
             "Ollama CLI not found; model pulls will be skipped.",
             file=sys.stderr,
@@ -76,7 +96,7 @@ def pull_models(models: Sequence[str]) -> None:
         )
         return
     for model in models:
-        print("→", "ollama", "pull", model)
+        print("->", "ollama", "pull", model)
         # Start the pull process and stream its combined stdout/stderr live so
         # the user sees progress as it happens (large model downloads).
         try:
@@ -115,82 +135,6 @@ def pull_models(models: Sequence[str]) -> None:
         if ret != 0:
             print(f"Warning: failed to pull {model} (exit {ret})", file=sys.stderr)
             continue
-
-
-def ollama_server_ready(host: str = "127.0.0.1", port: int = 11434, timeout: float = 1.0) -> bool:
-    """Return True if the Ollama HTTP API responds at /api/tags.
-
-    Uses a short timeout; intended for polling readiness.
-    """
-    url = f"http://{host}:{port}/api/tags"
-    try:
-        # If we can open the endpoint without raising, consider the server ready.
-        # Avoid returning attributes from a loosely-typed HTTPResponse (which
-        # may be `Any`) to satisfy static type checkers.
-        with urllib.request.urlopen(url, timeout=timeout):
-            return True
-    except urllib.error.URLError:
-        return False
-    except socket.timeout:
-        return False
-
-
-def start_ollama_if_needed(wait_seconds: int = 30) -> None:
-    """If `ollama` is on PATH and the server isn't responding, start it.
-
-    Start attempts run detached so this script can continue; we poll until
-    `wait_seconds` to check readiness. If starting fails, we print a warning
-    and continue — pulls will be skipped if the server never comes up.
-    """
-    if not shutil.which("ollama"):
-        # Nothing to do when ollama CLI isn't installed
-        return
-
-    if ollama_server_ready():
-        print("Ollama server already responding; no need to start.")
-        return
-
-    print("ollama CLI found on PATH but server not responding — attempting to start 'ollama serve' in background...")
-    # Start ollama serve detached
-    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    try:
-        log = open(os.path.expanduser("~/.local/share/ollama/installer_ollama.log"), "a+")
-    except Exception:
-        log = None
-
-    try:
-        proc = subprocess.Popen(
-            ["ollama", "serve"],
-            stdout=log or subprocess.DEVNULL,
-            stderr=log or subprocess.STDOUT,
-            start_new_session=True,
-            creationflags=creationflags,
-        )
-        # Reference the process so linters won't complain about an unused
-        # assignment; also print the PID for diagnostics.
-        pid = getattr(proc, "pid", None)
-        if pid:
-            print(f"Started ollama serve (pid {pid})")
-    except FileNotFoundError:
-        print("Failed to start Ollama: 'ollama' not found", file=sys.stderr)
-        return
-    except Exception as e:
-        print(f"Failed to start Ollama: {e}", file=sys.stderr)
-        return
-
-    # Poll for readiness until timeout
-    deadline = time.time() + float(wait_seconds)
-    while time.time() < deadline:
-        if ollama_server_ready():
-            print("Ollama server is up and responding.")
-            if log:
-                log.close()
-            return
-        time.sleep(1)
-
-    print(f"Warning: Ollama did not become ready within {wait_seconds}s. Check logs or run 'ollama serve' manually.")
-    if log:
-        log.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -264,12 +208,38 @@ def find_python312() -> str | None:
         if path:
             return path
 
-    # 2) Look for python3 or python and check version
+    # 2) Windows `py` launcher: support `py -3.12` if available (check early).
+    # Only probe the `py` launcher on Windows hosts — some Unix systems may
+    # have an unrelated `py` binary that does not accept `-3.12` and would
+    # print confusing usage messages during discovery.
+    try:
+        if os.name == "nt":
+            py_launcher = shutil.which("py")
+            if py_launcher:
+                try:
+                    out = (
+                        subprocess.check_output(
+                            [py_launcher, "-3.12", "-c", "import sys; print(sys.version_info[:2])"],
+                            stderr=subprocess.STDOUT,
+                        )
+                        .decode()
+                        .strip()
+                    )
+                    if "(3, 12)" in out or "3, 12" in out:
+                        return py_launcher
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # 3) Look for python3 or python and check version
     for candidate in (shutil.which("python3"), shutil.which("python")):
         if candidate:
             try:
                 out = (
-                    subprocess.check_output([candidate, "-c", "import sys; print(sys.version_info[:2])"])
+                    subprocess.check_output(
+                        [candidate, "-c", "import sys; print(sys.version_info[:2])"], stderr=subprocess.STDOUT
+                    )
                     .decode()
                     .strip()
                 )
@@ -278,7 +248,7 @@ def find_python312() -> str | None:
             except Exception:
                 continue
 
-    # 3) pyenv shims / versions
+    # 4) pyenv shims / versions
     try:
         home = os.path.expanduser("~")
         pyenv_shim = os.path.join(home, ".pyenv", "shims", "python3.12")
@@ -291,7 +261,7 @@ def find_python312() -> str | None:
     except Exception:
         pass
 
-    # 4) Common Unix locations
+    # 5) Common Unix locations
     unix_candidates = [
         "/usr/bin/python3.12",
         "/usr/local/bin/python3.12",
@@ -301,8 +271,8 @@ def find_python312() -> str | None:
         if c and os.path.exists(c):
             return c
 
-    # 5) Common Windows locations
-    if platform.system().lower().startswith("win"):
+    # 6) Common Windows locations
+    if os.name == "nt":
         localapp = os.environ.get("LOCALAPPDATA")
         programfiles = os.environ.get("ProgramFiles")
         programfiles_x86 = os.environ.get("ProgramFiles(x86)")
@@ -329,16 +299,32 @@ def main() -> None:
     # Python 3.12 on the system (PATH, pyenv, common locations). If the user
     # supplied `--python`, respect that explicit choice.
     default_python = "python" if os.name == "nt" else sys.executable
+    python_cmd_prefix: list[str] | None = None
+
     if args.python == default_python:
         py312 = find_python312()
         if py312:
             print(f"Found Python 3.12 at: {py312} — using it to create the venv")
-            args.python = py312
+            # If the discovered interpreter is the Windows `py` launcher (exact
+            # name `py` or `py.exe`) prefer invoking it with `-3.12` so
+            # subprocess calls run the intended interpreter version. Avoid
+            # matching `python3.12` which also starts with "py".
+            base = os.path.basename(py312).lower()
+            if base in ("py", "py.exe"):
+                python_cmd_prefix = [py312, "-3.12"]
+                args.python = py312
+            else:
+                args.python = py312
 
     # Verify the chosen Python is actually Python 3.12. If not, fail early
     # with an actionable message — we do not try to install Python automatically.
     try:
-        out = subprocess.check_output([args.python, "-c", "import sys; print(sys.version_info[:2])"]).decode().strip()
+        check_cmd = (
+            python_cmd_prefix + ["-c", "import sys; print(sys.version_info[:2])"]
+            if python_cmd_prefix
+            else [args.python, "-c", "import sys; print(sys.version_info[:2])"]
+        )
+        out = subprocess.check_output(check_cmd).decode().strip()
         if "(3, 12)" not in out and "3, 12" not in out:
             print(
                 "Error: Python 3.12 not found. The installer requires Python 3.12.",
@@ -361,9 +347,6 @@ def main() -> None:
 
     # Attempt to read configured defaults from the project's AgentConfig (if available).
     cfg = None
-    # Ensure the repository root is on sys.path so `src.config` is importable
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
 
     try:
         cfg_mod = importlib.import_module("src.config")
@@ -379,7 +362,9 @@ def main() -> None:
         except Exception:
             cfg = None
 
-    py = ensure_venv(args.python)
+    # Create the venv using the resolved interpreter. If we need to use the
+    # Windows `py` launcher, pass the prefix (e.g. ['py','-3.12']).
+    py = ensure_venv(python_cmd_prefix if python_cmd_prefix is not None else args.python)
     run([str(py), "-m", "pip", "install", "-U", "pip"])
 
     files = ["requirements.txt"]
@@ -389,7 +374,17 @@ def main() -> None:
 
     if args.pull_models:
         # If `ollama` is present on PATH try to start it so pulls can succeed.
-        start_ollama_if_needed()
+        # Delegate to the centralized helper in `src.ollama` which handles
+        # platform specifics (log path, subprocess flags) consistently.
+        if ollama is not None:
+            try:
+                ollama.check_and_start_ollama(exit_on_failure=False)
+            except Exception as e:
+                print(f"Warning: unable to start Ollama via src.ollama: {e}", file=sys.stderr)
+        else:
+            # If `src.ollama` wasn't importable, proceed without attempting
+            # to start the runtime (the later pull will detect absence).
+            pass
         # Resolve final model names: prefer CLI args, then project config, then built-in defaults.
         robot_model = args.robot_model or (getattr(cfg, "robot_model", None) if cfg else DEFAULT_MODEL)
         assistant_model = args.assistant_model or (getattr(cfg, "assistant_model", None) if cfg else DEFAULT_MODEL)

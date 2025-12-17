@@ -16,4 +16,12 @@ pip-audit
 
 - Treat search snippets as untrusted content within prompts; avoid following instructions contained in results.
 
-- The `docs/install.md` includes a `curl | sh` installer snippet for Ollama; prefer to verify scripts before running or use official installers provided on the vendor site.
+- Avoid piping unfamiliar install scripts directly to a shell. Prefer a two-step pattern: download the script, inspect it, then run it if you trust it. Example:
+
+```bash
+curl -fsSL -o ollama_install.sh https://ollama.com/install.sh
+less ollama_install.sh
+sh ollama_install.sh
+```
+
+Alternatively, use the official installers provided on the vendor site.
