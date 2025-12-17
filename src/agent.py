@@ -106,6 +106,11 @@ try:
 except ModuleNotFoundError:
     _search_mod = importlib.import_module("search")
 search = _search_mod
+try:
+    _response_mod = importlib.import_module("src.response")
+except ModuleNotFoundError:
+    _response_mod = importlib.import_module("response")
+response = _response_mod
 
 
 class Agent:
@@ -387,67 +392,14 @@ class Agent:
         return the aggregated response text. Returns None on fatal errors (matching
         previous behavior) so callers can propagate `None`.
         """
-        if write_fn is None:
-            write_fn = self._write
-        cfg = self.cfg
-        chain = self.chains[chain_name]
         try:
-            response_stream = chain.stream(resp_inputs)
-        except _exceptions.ResponseError as exc:
-            if "not found" in str(exc).lower():
-                _model_utils_mod.handle_missing_model(self._mark_error, "Assistant", cfg.assistant_model)
-                return None
-            if _text_utils_mod.is_context_length_error(str(exc)):
-                if self.rebuild_counts["answer"] < _text_utils_mod.MAX_REBUILD_RETRIES:
-                    self._reduce_context_and_rebuild("answer", "answer")
-                    try:
-                        chain = (
-                            self.chains["response"] if chain_name == "response" else self.chains["response_no_search"]
-                        )
-                        response_stream = chain.stream(resp_inputs)
-                    except _exceptions.ResponseError as exc2:
-                        logging.error(f"Answer generation failed after retry: {exc2}")
-                        self._mark_error("Answer generation failed after retry; see logs for details.")
-                        return None
-                else:
-                    logging.error("Reached answer generation rebuild cap; please shorten your query or reset session.")
-                    self._mark_error(
-                        "Answer generation failed: exceeded rebuild attempts; "
-                        "please shorten your query or reset session."
-                    )
-                    return None
-            else:
-                logging.error(f"Answer generation failed: {exc}")
-                self._mark_error("Answer generation failed; see logs for details.")
-                return None
+            return cast(
+                str | None, response.generate_and_stream_response(self, resp_inputs, chain_name, one_shot, write_fn)
+            )
         except Exception as exc:
-            logging.error(f"Answer generation failed unexpectedly: {exc}")
+            logging.error("Response generation delegation failed: %s", exc)
             self._mark_error("Answer generation failed unexpectedly; see logs for details.")
             return None
-
-        if ANSI is not None and self._is_tty:
-            self._writeln("\n\033[91m[Answer]\033[0m")
-        else:
-            self._writeln("\n[Answer]")
-        response_chunks: List[str] = []
-        stream_error: Exception | None = None
-        try:
-            for chunk in response_stream:
-                response_chunks.append(chunk)
-                write_fn(chunk)
-        except KeyboardInterrupt:
-            logging.info("Streaming interrupted by user.")
-        except Exception as exc:
-            stream_error = exc
-            logging.error(f"Streaming error: {exc}")
-        if response_chunks and not response_chunks[-1].endswith("\n"):
-            self._writeln()
-        if one_shot:
-            self._writeln()
-        if stream_error:
-            self._mark_error("Answer streaming failed; please retry.")
-            return None
-        return "".join(response_chunks)
 
     def _update_topics(
         self,
