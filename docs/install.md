@@ -31,11 +31,10 @@ Ensure the Ollama runtime is installed first (the interactive agent requires it 
 Important: this project is tested on Python 3.12. The installer (`scripts/install_deps.py`) will attempt to locate a suitable Python 3.12 interpreter automatically by checking:
 
 - exact `python3.12` / `python3.12.exe` on PATH
-- the Windows `py` launcher (`py -3.12`) when available
 - `python3` / `python` on PATH (only accepted if its version is 3.12)
 - common `pyenv` shims and typical install locations
 
-You do not need to run a very specific command to start the installer — use whichever `python` command on your system resolves to the intended interpreter. Examples:
+You do not need to run a very specific command to start the installer — the installer will attempt to locate a suitable Python 3.12 interpreter automatically, so you do not have to invoke `python3.12` explicitly. Just run whichever `python` command on your system resolves to the intended interpreter. Examples:
 
 - On Linux where `python3` is your 3.12 interpreter:
 
