@@ -42,7 +42,7 @@ You do not need to run a very specific command to start the installer — the in
 python3 -m scripts.install_deps
 ```
 
-- On Windows where `python` may be the correct interpreter or you prefer the `py` launcher:
+- On Windows where `python` is the correct interpreter on PATH, run:
 
 ```powershell
 python -m scripts.install_deps

@@ -99,6 +99,15 @@ class Agent:
             "assistant_num_predict": cfg.assistant_num_predict,
             "robot_num_predict": cfg.robot_num_predict,
         }
+        # Initialize input handler for prompt/session related helpers.
+        try:
+            _input_handler_mod = importlib.import_module("src.input_handler")
+        except ModuleNotFoundError:
+            _input_handler_mod = importlib.import_module("input_handler")
+        # Provide a handler instance; prompt session may be created lazily.
+        # Use direct attribute access rather than getattr with constant names.
+        self.input_handler = _input_handler_mod.InputHandler(self._is_tty, None)
+        self.build_inputs = _input_handler_mod.build_inputs
 
     def _write(self, text: str) -> None:
         try:
@@ -265,39 +274,23 @@ class Agent:
         user_query: str,
         **overrides: Any,
     ) -> dict[str, Any]:
-        base = {
-            "current_datetime": current_datetime,
-            "current_year": current_year,
-            "current_month": current_month,
-            "current_day": current_day,
-            "conversation_history": conversation_text,
-            "user_question": user_query,
-        }
-        base.update(overrides)
-        return base
-
-    def _prompt_messages(self) -> tuple[Any, str]:
-        plain_prompt = "> "
-        if ANSI is not None and self._is_tty:
-            formatted = ANSI("\n\033[92m> \033[0m")
-            return formatted, plain_prompt
-        return plain_prompt, plain_prompt
-
-    def _build_prompt_session(self) -> PromptSessionType | None:
-        if PromptSession is None or InMemoryHistory is None:
-            return None
+        # build_inputs is dynamically imported; cast to the declared return type for mypy.
         return cast(
-            PromptSessionType,
-            PromptSession(
-                history=cast(InMemoryHistoryType, InMemoryHistory()),
-                multiline=False,
-                wrap_lines=True,
+            dict[str, Any],
+            self.build_inputs(
+                current_datetime, current_year, current_month, current_day, conversation_text, user_query, **overrides
             ),
         )
 
+    def _prompt_messages(self) -> tuple[Any, str]:
+        return cast(tuple[Any, str], self.input_handler.prompt_messages())
+
+    def _build_prompt_session(self) -> PromptSessionType | None:
+        return cast(PromptSessionType, self.input_handler.build_prompt_session())
+
     def _ensure_prompt_session(self) -> PromptSessionType | None:
-        if self._prompt_session is None:
-            self._prompt_session = self._build_prompt_session()
+        # Ensure the session is available; allow InputHandler to create it lazily.
+        self._prompt_session = cast(PromptSessionType, self.input_handler.ensure_prompt_session(self._prompt_session))
         return self._prompt_session
 
     @staticmethod
@@ -316,12 +309,7 @@ class Agent:
         return max(scores) if scores else 0.0
 
     def _read_user_query(self) -> str:
-        formatted_prompt, _ = self._prompt_messages()
-        session = self._ensure_prompt_session()
-        if session is None:
-            # Fallback to built-in input when prompt_toolkit is unavailable.
-            return input(formatted_prompt)  # noqa: A001 - shadowing built-in acceptable for prompt
-        return cast(str, session.prompt(formatted_prompt))
+        return cast(str, self.input_handler.read_user_query(self._prompt_session))
 
     def answer_once(self, question: str) -> str | None:
         try:
