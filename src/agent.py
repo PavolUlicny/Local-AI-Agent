@@ -1,6 +1,32 @@
+"""Agent orchestration and helper decompositions.
+
+This module implements the top-level `Agent` class which orchestrates user
+queries, context selection, optional web search orchestration, and final
+response generation. The implementation has been refactored into small,
+testable helpers to keep control flow clear and to improve unit test
+coverage:
+
+- `QueryContext`: a dataclass capturing computed context values (datetime,
+    conversation summary, embeddings, selected topic, etc.).
+- `_invoke_chain_safe`: centralized chain invocation with rebuild-on-context-
+    length handling and consistent ResponseError propagation.
+- `_decide_should_search`, `_generate_search_seed`: encapsulate LLM-driven
+    classification and seed selection logic.
+- `_run_search_rounds`: thin wrapper around `SearchOrchestrator.run`.
+- `_generate_and_stream_response`: centralized response streaming with
+    injectable `write_fn` for tests.
+- `_build_resp_inputs`: builds the inputs for the final response chain and
+    chooses between `response` and `response_no_search` chains.
+
+Interactive prompt/session handling is delegated to `src.input_handler.InputHandler`.
+The refactor preserves runtime behavior while enabling focused unit tests
+for each extracted piece.
+"""
+
 from __future__ import annotations
 
-from typing import Any, List, TYPE_CHECKING, cast
+from typing import Any, List, Set, TYPE_CHECKING, cast, Callable
+from dataclasses import dataclass
 import importlib
 import logging
 import sys
@@ -65,6 +91,116 @@ except ModuleNotFoundError as exc:  # fallback when imported as top-level module
 
 
 class Agent:
+    @dataclass(frozen=True)
+    class QueryContext:
+        current_datetime: str
+        current_year: str
+        current_month: str
+        current_day: str
+        question_keywords: List[str]
+        question_embedding: List[float] | None
+        selected_topic_index: int | None
+        recent_history: list
+        topic_keywords: Set[str]
+        topic_brief_text: str
+        topic_embedding_current: List[float] | None
+        recent_for_prompt: list
+        conversation_text: str
+        prior_responses_text: str
+
+    def _build_query_context(self, user_query: str) -> "Agent.QueryContext":
+        cfg = self.cfg
+        current_datetime = _text_utils_mod.current_datetime_utc()
+        dt_obj = datetime.now(timezone.utc)
+        current_year = str(dt_obj.year)
+        current_month = f"{dt_obj.month:02d}"
+        current_day = f"{dt_obj.day:02d}"
+        question_keywords = _keywords_mod.extract_keywords(user_query)
+        question_embedding = self.embedding_client.embed(user_query)
+        try:
+            selected_topic_index, recent_history, topic_keywords = _topic_utils_mod.select_topic(
+                self.chains["context"],
+                self.topics,
+                user_query,
+                question_keywords,
+                cfg.max_context_turns,
+                current_datetime,
+                current_year,
+                current_month,
+                current_day,
+                question_embedding=question_embedding,
+                embedding_threshold=cfg.embedding_similarity_threshold,
+            )
+        except _exceptions.ResponseError as exc:  # Robot model not found, etc.
+            message = str(exc)
+            if "not found" in message.lower():
+                _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
+                return Agent.QueryContext(
+                    current_datetime,
+                    current_year,
+                    current_month,
+                    current_day,
+                    question_keywords,
+                    question_embedding,
+                    None,
+                    [],
+                    set(question_keywords),
+                    "",
+                    None,
+                    [],
+                    "No prior relevant conversation.",
+                    "No prior answers for this topic.",
+                )
+            selected_topic_index = None
+            recent_history = []
+            topic_keywords = set(question_keywords)
+        except Exception as exc:  # graceful fallback
+            logging.warning(f"Context classification failed; proceeding without topic selection. Error: {exc}")
+            selected_topic_index = None
+            recent_history = []
+            topic_keywords = set(question_keywords)
+        topic_brief_text = ""
+        if selected_topic_index is not None and selected_topic_index < len(self.topics):
+            topic_brief_text = _topic_utils_mod.topic_brief(self.topics[selected_topic_index])
+        topic_embedding_current: List[float] | None = None
+        if selected_topic_index is not None and selected_topic_index < len(self.topics):
+            topic_embedding_current = self.topics[selected_topic_index].embedding
+        recent_for_prompt = _topic_utils_mod.tail_turns(recent_history, _text_utils_mod.MAX_PROMPT_RECENT_TURNS)
+        conversation_text = _topic_utils_mod.format_turns(recent_for_prompt, "No prior relevant conversation.")
+        if topic_brief_text:
+            conversation_text = f"Topic brief:\n{topic_brief_text}\n\nRecent turns:\n{conversation_text}"
+        conversation_text = _text_utils_mod.truncate_text(
+            conversation_text, self._char_budget(_text_utils_mod.MAX_CONVERSATION_CHARS)
+        )
+        prior_responses_text = (
+            _topic_utils_mod.collect_prior_responses(
+                self.topics[selected_topic_index], max_chars=_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS
+            )
+            if selected_topic_index is not None
+            else "No prior answers for this topic."
+        )
+        if topic_brief_text:
+            prior_responses_text = f"{topic_brief_text}\n\nRecent answers:\n{prior_responses_text}"
+        prior_responses_text = _text_utils_mod.truncate_text(
+            prior_responses_text, self._char_budget(_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS)
+        )
+        return Agent.QueryContext(
+            current_datetime,
+            current_year,
+            current_month,
+            current_day,
+            question_keywords,
+            question_embedding,
+            selected_topic_index,
+            recent_history,
+            topic_keywords,
+            topic_brief_text,
+            topic_embedding_current,
+            recent_for_prompt,
+            conversation_text,
+            prior_responses_text,
+        )
+
     def __init__(self, cfg: AgentConfig, *, output_stream: TextIO | None = None, is_tty: bool | None = None):
         self.cfg = cfg
         self.llm_robot, self.llm_assistant = _chains.build_llms(cfg)
@@ -235,6 +371,250 @@ class Agent:
         )
         self._rebuild_llms(reduced_ctx, reduced_predict)
 
+    def _invoke_chain_safe(self, chain_name: str, inputs: dict[str, Any], rebuild_key: str | None = None) -> Any:
+        """Invoke a chain with standardized handling for ResponseError and optional rebuild.
+
+        This helper attempts a single invoke and, on context-length errors, will trigger
+        `_reduce_context_and_rebuild` once (if `rebuild_key` is provided and rebuilds remain),
+        then retry the invoke once. It re-raises exceptions for callers to handle the same
+        way the original inline code did.
+        """
+        try:
+            return self.chains[chain_name].invoke(inputs)
+        except _exceptions.ResponseError as exc:
+            msg = str(exc)
+            # propagate 'not found' to allow caller to handle missing models
+            if "not found" in msg.lower():
+                raise
+            # attempt one rebuild+retry on context-length errors when a rebuild key is supplied
+            if rebuild_key and _text_utils_mod.is_context_length_error(msg):
+                if self.rebuild_counts.get(rebuild_key, 0) < _text_utils_mod.MAX_REBUILD_RETRIES:
+                    self._reduce_context_and_rebuild(rebuild_key, rebuild_key)
+                    return self.chains[chain_name].invoke(inputs)
+            # otherwise re-raise for the caller to handle
+            raise
+
+    def _decide_should_search(self, ctx: "Agent.QueryContext", user_query: str, prior_responses_text: str) -> bool:
+        """Run the `search_decision` classifier and return True when it decides SEARCH.
+
+        This helper performs the chain invoke and validation. It does not swallow
+        `_exceptions.ResponseError` so the caller can preserve existing control-flow.
+        """
+        decision_raw = self._invoke_chain_safe(
+            "search_decision",
+            self._inputs(
+                ctx.current_datetime,
+                ctx.current_year,
+                ctx.current_month,
+                ctx.current_day,
+                ctx.conversation_text,
+                user_query,
+                known_answers=prior_responses_text,
+            ),
+            rebuild_key="search_decision",
+        )
+        decision_validated = cast(
+            str, _text_utils_mod.regex_validate(str(decision_raw), _text_utils_mod.PATTERN_SEARCH_DECISION, "SEARCH")
+        )
+        return decision_validated == "SEARCH"
+
+    def _generate_search_seed(self, ctx: "Agent.QueryContext", user_query: str, prior_responses_text: str) -> str:
+        """Invoke the `seed` chain and pick a seed query. May raise ResponseError to be
+        handled by the caller in the same way as the original code.
+        """
+        seed_raw = self._invoke_chain_safe(
+            "seed",
+            self._inputs(
+                ctx.current_datetime,
+                ctx.current_year,
+                ctx.current_month,
+                ctx.current_day,
+                ctx.conversation_text,
+                user_query,
+                known_answers=prior_responses_text,
+            ),
+            rebuild_key="seed",
+        )
+        seed_text = str(seed_raw).strip()
+        return cast(str, _text_utils_mod.pick_seed_query(seed_text, user_query))
+
+    def _run_search_rounds(
+        self,
+        ctx: "Agent.QueryContext",
+        user_query: str,
+        should_search: bool,
+        primary_search_query: str,
+        question_embedding: List[float] | None,
+        topic_embedding_current: List[float] | None,
+        topic_keywords: Set[str],
+    ) -> tuple[List[str], Set[str]]:
+        """Run search orchestration via SearchOrchestrator and return results + keywords.
+
+        This is a thin wrapper around `SearchOrchestrator.run` so the orchestration
+        callsite in `_handle_query_core` is easier to test and reason about.
+        It may raise `_search_orchestrator_mod.SearchAbort` which callers should handle.
+        """
+        orchestrator: SearchOrchestratorType = self._build_search_orchestrator()
+        aggregated_results, topic_keywords = orchestrator.run(
+            chains=self.chains,
+            should_search=should_search,
+            user_query=user_query,
+            current_datetime=ctx.current_datetime,
+            current_year=ctx.current_year,
+            current_month=ctx.current_month,
+            current_day=ctx.current_day,
+            conversation_text=ctx.conversation_text,
+            prior_responses_text=ctx.prior_responses_text,
+            question_embedding=question_embedding,
+            topic_embedding_current=topic_embedding_current,
+            topic_keywords=topic_keywords,
+            primary_search_query=primary_search_query,
+        )
+        return aggregated_results, topic_keywords
+
+    def _build_resp_inputs(
+        self,
+        current_datetime: str,
+        current_year: str,
+        current_month: str,
+        current_day: str,
+        conversation_text: str,
+        user_query: str,
+        should_search: bool,
+        prior_responses_text: str,
+        search_results_text: str | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        """Build response chain inputs and choose the chain name.
+
+        Returns a tuple of `(resp_inputs, chain_name)` matching the previous
+        inline logic in `_handle_query_core`.
+        """
+        if should_search:
+            resp_inputs = self._inputs(
+                current_datetime,
+                current_year,
+                current_month,
+                current_day,
+                conversation_text,
+                user_query,
+                search_results=search_results_text or "",
+                prior_responses=prior_responses_text,
+            )
+            chain_name = "response"
+        else:
+            resp_inputs = self._inputs(
+                current_datetime,
+                current_year,
+                current_month,
+                current_day,
+                conversation_text,
+                user_query,
+                prior_responses=prior_responses_text,
+            )
+            chain_name = "response_no_search"
+        return resp_inputs, chain_name
+
+    def _generate_and_stream_response(
+        self,
+        resp_inputs: dict[str, Any],
+        chain_name: str,
+        one_shot: bool,
+        write_fn: Callable[[str], None] | None = None,
+    ) -> str | None:
+        """Invoke `chain.stream` for `chain_name`, stream output via `write_fn` and
+        return the aggregated response text. Returns None on fatal errors (matching
+        previous behavior) so callers can propagate `None`.
+        """
+        if write_fn is None:
+            write_fn = self._write
+        cfg = self.cfg
+        chain = self.chains[chain_name]
+        try:
+            response_stream = chain.stream(resp_inputs)
+        except _exceptions.ResponseError as exc:
+            if "not found" in str(exc).lower():
+                _model_utils_mod.handle_missing_model(self._mark_error, "Assistant", cfg.assistant_model)
+                return None
+            if _text_utils_mod.is_context_length_error(str(exc)):
+                if self.rebuild_counts["answer"] < _text_utils_mod.MAX_REBUILD_RETRIES:
+                    self._reduce_context_and_rebuild("answer", "answer")
+                    try:
+                        chain = (
+                            self.chains["response"] if chain_name == "response" else self.chains["response_no_search"]
+                        )
+                        response_stream = chain.stream(resp_inputs)
+                    except _exceptions.ResponseError as exc2:
+                        logging.error(f"Answer generation failed after retry: {exc2}")
+                        self._mark_error("Answer generation failed after retry; see logs for details.")
+                        return None
+                else:
+                    logging.error("Reached answer generation rebuild cap; please shorten your query or reset session.")
+                    self._mark_error(
+                        "Answer generation failed: exceeded rebuild attempts; "
+                        "please shorten your query or reset session."
+                    )
+                    return None
+            else:
+                logging.error(f"Answer generation failed: {exc}")
+                self._mark_error("Answer generation failed; see logs for details.")
+                return None
+        except Exception as exc:
+            logging.error(f"Answer generation failed unexpectedly: {exc}")
+            self._mark_error("Answer generation failed unexpectedly; see logs for details.")
+            return None
+
+        if ANSI is not None and self._is_tty:
+            self._writeln("\n\033[91m[Answer]\033[0m")
+        else:
+            self._writeln("\n[Answer]")
+        response_chunks: List[str] = []
+        stream_error: Exception | None = None
+        try:
+            for chunk in response_stream:
+                response_chunks.append(chunk)
+                write_fn(chunk)
+        except KeyboardInterrupt:
+            logging.info("Streaming interrupted by user.")
+        except Exception as exc:
+            stream_error = exc
+            logging.error(f"Streaming error: {exc}")
+        if response_chunks and not response_chunks[-1].endswith("\n"):
+            self._writeln()
+        if one_shot:
+            self._writeln()
+        if stream_error:
+            self._mark_error("Answer streaming failed; please retry.")
+            return None
+        return "".join(response_chunks)
+
+    def _update_topics(
+        self,
+        selected_topic_index: int | None,
+        topic_keywords: Set[str],
+        question_keywords: List[str],
+        aggregated_results: List[str],
+        user_query: str,
+        response_text: str,
+        question_embedding: List[float] | None,
+    ) -> int | None:
+        """Wrap `topic_manager.update_topics` for easier testing and isolation.
+
+        Returns the selected topic index (or None) as the underlying method does.
+        """
+        return cast(
+            int | None,
+            self.topic_manager.update_topics(
+                topics=self.topics,
+                selected_topic_index=selected_topic_index,
+                topic_keywords=topic_keywords,
+                question_keywords=question_keywords,
+                aggregated_results=aggregated_results,
+                user_query=user_query,
+                response_text=response_text,
+                question_embedding=question_embedding,
+            ),
+        )
+
     def _ddg_results(self, query: str) -> Any:
         if self.search_client is None:
             self.search_client = _search_client_mod.SearchClient(
@@ -350,87 +730,26 @@ class Agent:
     def _handle_query_core(self, user_query: str, one_shot: bool) -> str | None:
         self._clear_error()
         self._reset_rebuild_counts()
+        ctx = self._build_query_context(user_query)
         cfg = self.cfg
-        current_datetime = _text_utils_mod.current_datetime_utc()
-        dt_obj = datetime.now(timezone.utc)
-        current_year = str(dt_obj.year)
-        current_month = f"{dt_obj.month:02d}"
-        current_day = f"{dt_obj.day:02d}"
-        question_keywords = _keywords_mod.extract_keywords(user_query)
-        question_embedding = self.embedding_client.embed(user_query)
-        try:
-            selected_topic_index, recent_history, topic_keywords = _topic_utils_mod.select_topic(
-                self.chains["context"],
-                self.topics,
-                user_query,
-                question_keywords,
-                cfg.max_context_turns,
-                current_datetime,
-                current_year,
-                current_month,
-                current_day,
-                question_embedding=question_embedding,
-                embedding_threshold=cfg.embedding_similarity_threshold,
-            )
-        except _exceptions.ResponseError as exc:  # Robot model not found, etc.
-            message = str(exc)
-            if "not found" in message.lower():
-                _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
-                return None
-            selected_topic_index = None
-            recent_history = []
-            topic_keywords = set(question_keywords)
-        except Exception as exc:  # graceful fallback
-            logging.warning(f"Context classification failed; proceeding without topic selection. Error: {exc}")
-            selected_topic_index = None
-            recent_history = []
-            topic_keywords = set(question_keywords)
-        topic_brief_text = ""
-        if selected_topic_index is not None and selected_topic_index < len(self.topics):
-            topic_brief_text = _topic_utils_mod.topic_brief(self.topics[selected_topic_index])
-        topic_embedding_current: List[float] | None = None
-        if selected_topic_index is not None and selected_topic_index < len(self.topics):
-            topic_embedding_current = self.topics[selected_topic_index].embedding
-        recent_for_prompt = _topic_utils_mod.tail_turns(recent_history, _text_utils_mod.MAX_PROMPT_RECENT_TURNS)
-        conversation_text = _topic_utils_mod.format_turns(recent_for_prompt, "No prior relevant conversation.")
-        if topic_brief_text:
-            conversation_text = f"Topic brief:\n{topic_brief_text}\n\nRecent turns:\n{conversation_text}"
-        conversation_text = _text_utils_mod.truncate_text(
-            conversation_text, self._char_budget(_text_utils_mod.MAX_CONVERSATION_CHARS)
-        )
-        prior_responses_text = (
-            _topic_utils_mod.collect_prior_responses(
-                self.topics[selected_topic_index], max_chars=_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS
-            )
-            if selected_topic_index is not None
-            else "No prior answers for this topic."
-        )
-        if topic_brief_text:
-            prior_responses_text = f"{topic_brief_text}\n\nRecent answers:\n{prior_responses_text}"
-        prior_responses_text = _text_utils_mod.truncate_text(
-            prior_responses_text, self._char_budget(_text_utils_mod.MAX_PRIOR_RESPONSE_CHARS)
-        )
+        current_datetime = ctx.current_datetime
+        current_year = ctx.current_year
+        current_month = ctx.current_month
+        current_day = ctx.current_day
+        question_keywords = ctx.question_keywords
+        question_embedding = ctx.question_embedding
+        selected_topic_index = ctx.selected_topic_index
+        topic_keywords = ctx.topic_keywords
+        topic_embedding_current = ctx.topic_embedding_current
+        conversation_text = ctx.conversation_text
+        prior_responses_text = ctx.prior_responses_text
 
         aggregated_results: List[str] = []
 
         should_search = bool(cfg.force_search)
         if not should_search and cfg.auto_search_decision:
             try:
-                decision_raw = self.chains["search_decision"].invoke(
-                    self._inputs(
-                        current_datetime,
-                        current_year,
-                        current_month,
-                        current_day,
-                        conversation_text,
-                        user_query,
-                        known_answers=prior_responses_text,
-                    )
-                )
-                decision_validated = _text_utils_mod.regex_validate(
-                    str(decision_raw), _text_utils_mod.PATTERN_SEARCH_DECISION, "SEARCH"
-                )
-                should_search = decision_validated == "SEARCH"
+                should_search = self._decide_should_search(ctx, user_query, prior_responses_text)
             except _exceptions.ResponseError as exc:
                 if "not found" in str(exc).lower():
                     _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
@@ -473,19 +792,7 @@ class Agent:
         if should_search:
             primary_search_query = user_query
             try:
-                seed_raw = self.chains["seed"].invoke(
-                    self._inputs(
-                        current_datetime,
-                        current_year,
-                        current_month,
-                        current_day,
-                        conversation_text,
-                        user_query,
-                        known_answers=prior_responses_text,
-                    )
-                )
-                seed_text = str(seed_raw).strip()
-                primary_search_query = _text_utils_mod.pick_seed_query(seed_text, user_query)
+                primary_search_query = self._generate_search_seed(ctx, user_query, prior_responses_text)
             except _exceptions.ResponseError as exc:
                 if "not found" in str(exc).lower():
                     _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
@@ -519,22 +826,15 @@ class Agent:
             except Exception as exc:
                 logging.warning(f"Seed generation failed unexpectedly; using original query. Error: {exc}")
                 primary_search_query = user_query
-            orchestrator: SearchOrchestratorType = self._build_search_orchestrator()
             try:
-                aggregated_results, topic_keywords = orchestrator.run(
-                    chains=self.chains,
-                    should_search=should_search,
-                    user_query=user_query,
-                    current_datetime=current_datetime,
-                    current_year=current_year,
-                    current_month=current_month,
-                    current_day=current_day,
-                    conversation_text=conversation_text,
-                    prior_responses_text=prior_responses_text,
-                    question_embedding=question_embedding,
-                    topic_embedding_current=topic_embedding_current,
-                    topic_keywords=topic_keywords,
-                    primary_search_query=primary_search_query,
+                aggregated_results, topic_keywords = self._run_search_rounds(
+                    ctx,
+                    user_query,
+                    should_search,
+                    primary_search_query,
+                    question_embedding,
+                    topic_embedding_current,
+                    topic_keywords,
                 )
             except _search_orchestrator_mod.SearchAbort:
                 return None
@@ -546,92 +846,29 @@ class Agent:
         search_results_text = _text_utils_mod.truncate_text(
             search_results_text, self._char_budget(_text_utils_mod.MAX_SEARCH_RESULTS_CHARS)
         )
-        if should_search:
-            resp_inputs = self._inputs(
-                current_datetime,
-                current_year,
-                current_month,
-                current_day,
-                conversation_text,
-                user_query,
-                search_results=search_results_text,
-                prior_responses=prior_responses_text,
-            )
-            chain = self.chains["response"]
-        else:
-            resp_inputs = self._inputs(
-                current_datetime,
-                current_year,
-                current_month,
-                current_day,
-                conversation_text,
-                user_query,
-                prior_responses=prior_responses_text,
-            )
-            chain = self.chains["response_no_search"]
-        try:
-            response_stream = chain.stream(resp_inputs)
-        except _exceptions.ResponseError as exc:
-            if "not found" in str(exc).lower():
-                _model_utils_mod.handle_missing_model(self._mark_error, "Assistant", cfg.assistant_model)
-                return None
-            if _text_utils_mod.is_context_length_error(str(exc)):
-                if self.rebuild_counts["answer"] < _text_utils_mod.MAX_REBUILD_RETRIES:
-                    self._reduce_context_and_rebuild("answer", "answer")
-                    try:
-                        chain = self.chains["response"] if should_search else self.chains["response_no_search"]
-                        response_stream = chain.stream(resp_inputs)
-                    except _exceptions.ResponseError as exc2:
-                        logging.error(f"Answer generation failed after retry: {exc2}")
-                        self._mark_error("Answer generation failed after retry; see logs for details.")
-                        return None
-                else:
-                    logging.error("Reached answer generation rebuild cap; please shorten your query or reset session.")
-                    self._mark_error(
-                        "Answer generation failed: exceeded rebuild attempts; "
-                        "please shorten your query or reset session."
-                    )
-                    return None
-            else:
-                logging.error(f"Answer generation failed: {exc}")
-                self._mark_error("Answer generation failed; see logs for details.")
-                return None
-        except Exception as exc:
-            logging.error(f"Answer generation failed unexpectedly: {exc}")
-            self._mark_error("Answer generation failed unexpectedly; see logs for details.")
+        resp_inputs, chain_name = self._build_resp_inputs(
+            current_datetime,
+            current_year,
+            current_month,
+            current_day,
+            conversation_text,
+            user_query,
+            should_search,
+            prior_responses_text,
+            search_results_text if should_search else None,
+        )
+        # Generate and stream the response; helper returns final text or None on failure
+        response_text = self._generate_and_stream_response(resp_inputs, chain_name, one_shot)
+        if response_text is None:
             return None
-        if ANSI is not None and self._is_tty:
-            self._writeln("\n\033[91m[Answer]\033[0m")
-        else:
-            self._writeln("\n[Answer]")
-        response_chunks: List[str] = []
-        stream_error: Exception | None = None
-        try:
-            for chunk in response_stream:
-                response_chunks.append(chunk)
-                self._write(chunk)
-        except KeyboardInterrupt:
-            logging.info("Streaming interrupted by user.")
-        except Exception as exc:
-            stream_error = exc
-            logging.error(f"Streaming error: {exc}")
-        if response_chunks and not response_chunks[-1].endswith("\n"):
-            self._writeln()
-        if one_shot:
-            self._writeln()
-        if stream_error:
-            self._mark_error("Answer streaming failed; please retry.")
-            return None
-        response_text = "".join(response_chunks)
-        selected_topic_index = self.topic_manager.update_topics(
-            topics=self.topics,
-            selected_topic_index=selected_topic_index,
-            topic_keywords=topic_keywords,
-            question_keywords=question_keywords,
-            aggregated_results=aggregated_results,
-            user_query=user_query,
-            response_text=response_text,
-            question_embedding=question_embedding,
+        selected_topic_index = self._update_topics(
+            selected_topic_index,
+            topic_keywords,
+            question_keywords,
+            aggregated_results,
+            user_query,
+            response_text,
+            question_embedding,
         )
         return response_text
 
