@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any, Tuple, Callable
 import logging
 
 try:
@@ -22,9 +22,11 @@ class InputHandler:
     built-in `input()` when a `prompt_toolkit` session is unavailable.
     """
 
-    def __init__(self, is_tty: bool, prompt_session: Any | None = None):
+    def __init__(self, is_tty: bool, prompt_session: Any | None = None, input_fn: Callable[[str], str] | None = None):
         self._is_tty = bool(is_tty)
         self._prompt_session = prompt_session
+        # input_fn allows injecting a non-blocking input function for tests.
+        self._input_fn = input_fn
 
     def prompt_messages(self) -> Tuple[Any, str]:
         """Return (formatted_prompt, plain_prompt) similar to previous code.
@@ -53,9 +55,15 @@ class InputHandler:
 
     def read_user_query(self, session: Any | None = None) -> str:
         formatted_prompt, _ = self.prompt_messages()
+        # If an injected input function is provided prefer it and avoid
+        # creating a prompt_toolkit session (which would attempt to read
+        # from stdin and block in tests).
+        if session is None and self._input_fn is not None:
+            return self._input_fn(formatted_prompt)
         session = self.ensure_prompt_session(session)
         if session is None:
-            # fallback to builtin input()
+            # fallback to builtin input() when no injected input function
+            # and no prompt session is available.
             return input(formatted_prompt)  # noqa: A001 - acceptable here
         # prompt_toolkit's prompt() can return Any; ensure we return a str for typing
         return str(session.prompt(formatted_prompt))
