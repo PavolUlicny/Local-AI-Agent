@@ -5,10 +5,8 @@ import importlib
 
 try:
     _search_orchestrator_mod = importlib.import_module("src.search_orchestrator")
-    _text_utils_mod = importlib.import_module("src.text_utils")
 except ModuleNotFoundError:
     _search_orchestrator_mod = importlib.import_module("search_orchestrator")
-    _text_utils_mod = importlib.import_module("text_utils")
 
 
 def build_search_orchestrator(agent: Any) -> Any:
