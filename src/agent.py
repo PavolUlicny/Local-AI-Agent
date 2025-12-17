@@ -96,6 +96,12 @@ except ModuleNotFoundError:
 QueryContext = _context_mod.QueryContext
 build_query_context = _context_mod.build_query_context
 
+try:
+    _agent_utils_mod = importlib.import_module("src.agent_utils")
+except ModuleNotFoundError:
+    _agent_utils_mod = importlib.import_module("agent_utils")
+agent_utils = _agent_utils_mod
+
 
 class Agent:
     def __init__(self, cfg: AgentConfig, *, output_stream: TextIO | None = None, is_tty: bool | None = None):
@@ -269,27 +275,8 @@ class Agent:
         self._rebuild_llms(reduced_ctx, reduced_predict)
 
     def _invoke_chain_safe(self, chain_name: str, inputs: dict[str, Any], rebuild_key: str | None = None) -> Any:
-        """Invoke a chain with standardized handling for ResponseError and optional rebuild.
-
-        This helper attempts a single invoke and, on context-length errors, will trigger
-        `_reduce_context_and_rebuild` once (if `rebuild_key` is provided and rebuilds remain),
-        then retry the invoke once. It re-raises exceptions for callers to handle the same
-        way the original inline code did.
-        """
-        try:
-            return self.chains[chain_name].invoke(inputs)
-        except _exceptions.ResponseError as exc:
-            msg = str(exc)
-            # propagate 'not found' to allow caller to handle missing models
-            if "not found" in msg.lower():
-                raise
-            # attempt one rebuild+retry on context-length errors when a rebuild key is supplied
-            if rebuild_key and _text_utils_mod.is_context_length_error(msg):
-                if self.rebuild_counts.get(rebuild_key, 0) < _text_utils_mod.MAX_REBUILD_RETRIES:
-                    self._reduce_context_and_rebuild(rebuild_key, rebuild_key)
-                    return self.chains[chain_name].invoke(inputs)
-            # otherwise re-raise for the caller to handle
-            raise
+        """Delegate to `src.agent_utils.invoke_chain_safe` for centralized handling."""
+        return agent_utils.invoke_chain_safe(self, chain_name, inputs, rebuild_key)
 
     def _decide_should_search(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> bool:
         """Run the `search_decision` classifier and return True when it decides SEARCH.
@@ -381,35 +368,22 @@ class Agent:
         prior_responses_text: str,
         search_results_text: str | None = None,
     ) -> tuple[dict[str, Any], str]:
-        """Build response chain inputs and choose the chain name.
-
-        Returns a tuple of `(resp_inputs, chain_name)` matching the previous
-        inline logic in `_handle_query_core`.
-        """
-        if should_search:
-            resp_inputs = self._inputs(
+        """Delegate to `src.agent_utils.build_resp_inputs`."""
+        return cast(
+            tuple[dict[str, Any], str],
+            agent_utils.build_resp_inputs(
+                self,
                 current_datetime,
                 current_year,
                 current_month,
                 current_day,
                 conversation_text,
                 user_query,
-                search_results=search_results_text or "",
-                prior_responses=prior_responses_text,
-            )
-            chain_name = "response"
-        else:
-            resp_inputs = self._inputs(
-                current_datetime,
-                current_year,
-                current_month,
-                current_day,
-                conversation_text,
-                user_query,
-                prior_responses=prior_responses_text,
-            )
-            chain_name = "response_no_search"
-        return resp_inputs, chain_name
+                should_search,
+                prior_responses_text,
+                search_results_text,
+            ),
+        )
 
     def _generate_and_stream_response(
         self,
@@ -551,11 +525,18 @@ class Agent:
         user_query: str,
         **overrides: Any,
     ) -> dict[str, Any]:
-        # build_inputs is dynamically imported; cast to the declared return type for mypy.
+        # delegate to agent_utils.inputs to centralize the inputs builder
         return cast(
             dict[str, Any],
-            self.build_inputs(
-                current_datetime, current_year, current_month, current_day, conversation_text, user_query, **overrides
+            agent_utils.inputs(
+                self,
+                current_datetime,
+                current_year,
+                current_month,
+                current_day,
+                conversation_text,
+                user_query,
+                **overrides,
             ),
         )
 
