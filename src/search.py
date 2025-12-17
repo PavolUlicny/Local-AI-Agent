@@ -20,7 +20,10 @@ def build_search_orchestrator(agent: Any) -> Any:
     # Allow tests to monkeypatch `agent._build_search_orchestrator` and have
     # this function respect that. If the agent provides a custom builder,
     # call it; otherwise construct the orchestrator here.
-    if hasattr(agent, "_build_search_orchestrator"):
+    # Only honor an instance-level override (e.g., monkeypatch on the agent
+    # instance). If the attribute only exists on the Agent class (our own
+    # method that delegates here) calling it would recurse, so avoid that.
+    if "_build_search_orchestrator" in getattr(agent, "__dict__", {}):
         return agent._build_search_orchestrator()
     return cast(
         Any,
