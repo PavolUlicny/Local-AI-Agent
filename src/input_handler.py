@@ -1,16 +1,35 @@
 from __future__ import annotations
 
-from typing import Any, Tuple, Callable
+from typing import Any, Tuple, Callable, TYPE_CHECKING
 import logging
+
+if TYPE_CHECKING:
+    from prompt_toolkit import PromptSession as PromptSessionType
+    from prompt_toolkit.formatted_text import ANSI as ANSIType
+    from prompt_toolkit.history import InMemoryHistory as InMemoryHistoryType
+else:
+    PromptSessionType = Any
+    ANSIType = Any
+    InMemoryHistoryType = Any
+
+# Runtime variables for optional prompt_toolkit components. Annotate as
+# optional to avoid mypy treating them as immutable types when set to None.
+PromptSession: Any | None
+ANSI: Any | None
+InMemoryHistory: Any | None
 
 try:
     from prompt_toolkit import PromptSession as _PromptSession
     from prompt_toolkit.formatted_text import ANSI as _ANSI
     from prompt_toolkit.history import InMemoryHistory as _InMemoryHistory
 except Exception:  # pragma: no cover - optional dependency
-    _PromptSession = None
-    _ANSI = None
-    _InMemoryHistory = None
+    PromptSession = None
+    ANSI = None
+    InMemoryHistory = None
+else:
+    PromptSession = _PromptSession
+    ANSI = _ANSI
+    InMemoryHistory = _InMemoryHistory
 
 
 class InputHandler:
@@ -34,17 +53,17 @@ class InputHandler:
         If `prompt_toolkit.ANSI` is available and `is_tty` is True, return a
         formatted ANSI prompt; otherwise return a plain text prompt string.
         """
-        if _ANSI is not None and self._is_tty:
+        if ANSI is not None and self._is_tty:
             try:
-                return _ANSI("\n\033[92m> \033[0m"), "> "
+                return ANSI("\n\033[92m> \033[0m"), "> "
             except Exception:
                 logging.debug("ANSI formatting failed; falling back to plain prompt")
         return "> ", "> "
 
     def build_prompt_session(self) -> Any | None:
-        if _PromptSession is None or _InMemoryHistory is None:
+        if PromptSession is None or InMemoryHistory is None:
             return None
-        return _PromptSession(history=_InMemoryHistory(), multiline=False, wrap_lines=True)
+        return PromptSession(history=InMemoryHistory(), multiline=False, wrap_lines=True)
 
     def ensure_prompt_session(self, existing: Any | None = None) -> Any | None:
         if existing is not None:
