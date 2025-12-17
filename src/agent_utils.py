@@ -6,11 +6,9 @@ import importlib
 try:
     _exceptions = importlib.import_module("src.exceptions")
     _text_utils_mod = importlib.import_module("src.text_utils")
-    _model_utils_mod = importlib.import_module("src.model_utils")
 except ModuleNotFoundError:
     _exceptions = importlib.import_module("exceptions")
     _text_utils_mod = importlib.import_module("text_utils")
-    _model_utils_mod = importlib.import_module("model_utils")
 
 
 def invoke_chain_safe(agent: Any, chain_name: str, inputs: dict[str, Any], rebuild_key: str | None = None) -> Any:
