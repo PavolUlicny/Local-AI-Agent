@@ -44,6 +44,7 @@ User Input
 
 - `src/main.py`: Entry-point that wires CLI args to the `Agent` and starts execution.
 - `src/agent.py`: Orchestration of context, search, and response synthesis.
+- `src/input_handler.py`: Interactive prompt/session helpers (prompt formatting, session creation, and input reading).
 - `src/chains.py`: Builds LangChain components and prompt chains.
 - `src/search_client.py`: DDGS wrapper with retries and normalization.
 - `src/search_orchestrator.py`: Query/pending loop logic and deduplication.
