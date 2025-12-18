@@ -32,12 +32,15 @@ def test_main_fallback_import_uses_local_modules(tmp_path) -> None:
     (temp_pkg / "ollama.py").write_text("def check_and_start_ollama(exit_on_failure=True):\n    return True\n")
 
     python = sys.executable
+    # Use a POSIX-style path so Windows backslashes don't produce escape
+    # sequence problems when embedded inside the -c command string.
+    src_file = (src_dir / "main.py").as_posix()
     cmd = [
         python,
         "-c",
         (
             "import runpy, sys; sys.path.insert(0,'.');"
-            f"runpy.run_path('{src_dir}/main.py', run_name='main'); print('FALLBACK_OK')"
+            f"runpy.run_path('{src_file}', run_name='main'); print('FALLBACK_OK')"
         ),
     ]
 
