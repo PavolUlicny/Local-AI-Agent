@@ -239,7 +239,11 @@ class Agent:
         self.rebuild_counts[stage_key] += 1
         current_ctx = min(self.cfg.assistant_num_ctx, self.cfg.robot_num_ctx)
         current_predict = self.cfg.assistant_num_predict
-        reduced_ctx = max(2048, current_ctx // 2)
+        # Compute a reduced context that does not increase the current context.
+        # Use a conservative lower bound (1024 chars-worth tokens) and halve the
+        # context, but never grow it: reduced_ctx = min(current_ctx, max(1024, current_ctx // 2)).
+        reduced_ctx_candidate = max(1024, current_ctx // 2)
+        reduced_ctx = min(current_ctx, reduced_ctx_candidate)
         reduced_predict = max(512, min(current_predict, reduced_ctx // 2))
         logging.info(
             "Context too large (%s); rebuild %s/%s with num_ctx=%s, num_predict=%s.",
