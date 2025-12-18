@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import src.agent_utils as au_mod
 from src.exceptions import ResponseError
+import logging
 
 
 class FakeChain:
@@ -65,3 +66,49 @@ def test_inputs_and_build_resp_inputs_delegate():
 
     resp_inputs2, chain_name2 = au_mod.build_resp_inputs(agent, "d", "y", "m", "dd", "conv", "q", False, "p", None)
     assert chain_name2 == "response_no_search"
+
+
+def test_safe_close_variants(caplog):
+    from src.agent import Agent
+
+    class NoClose:
+        pass
+
+    class GoodClose:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class BadClose:
+        def close(self):
+            raise RuntimeError("boom")
+
+    # None should be handled silently
+    Agent._safe_close(None)
+
+    # object without close attribute should be fine
+    Agent._safe_close(NoClose())
+
+    # close that succeeds
+    good = GoodClose()
+    Agent._safe_close(good)
+    assert good.closed is True
+
+    # close that raises should not propagate and should log at debug
+    caplog.set_level(logging.DEBUG)
+    Agent._safe_close(BadClose())
+    assert any("Client close failed" in rec.message for rec in caplog.records)
+
+
+def test_mark_and_clear_error() -> None:
+    from src.agent import Agent
+    from src.config import AgentConfig
+
+    agent = Agent(AgentConfig(no_auto_search=True))
+    msg = agent._mark_error("problem")
+    assert msg == "problem"
+    assert agent._last_error == "problem"
+    agent._clear_error()
+    assert agent._last_error is None
