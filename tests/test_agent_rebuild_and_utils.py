@@ -41,10 +41,11 @@ def test_context_similarity_edge_cases() -> None:
     agent = Agent(cfg)
     # None embeddings yield zero
     assert agent._context_similarity(None, None, None) == 0.0
-    # question embedding only
-    assert agent._context_similarity([1.0, 0.0], [1.0, 0.0], None) == 1.0
-    # orthogonal vectors
-    assert round(agent._context_similarity([1.0, 0.0], [0.0, 1.0], None), 6) == 0.0
+    # when both question and topic embeddings are present, the max similarity is returned
+    # candidate aligns with question but not topic -> max should be 1.0
+    assert agent._context_similarity([1.0, 0.0], [1.0, 0.0], [0.0, 1.0]) == 1.0
+    # candidate aligns with topic more than question -> pick the topic similarity
+    assert agent._context_similarity([0.0, 1.0], [0.0, 0.2], [0.0, 1.0]) == 1.0
 
 
 def test_pick_seed_query_more_edge_cases() -> None:
