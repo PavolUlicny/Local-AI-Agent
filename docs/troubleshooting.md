@@ -5,6 +5,7 @@ Note: macOS is not officially supported or tested by this project. Troubleshooti
 | Symptom | Cause | Action |
 | --------- | ------- | -------- |
 | `Model 'xyz' not found` | Ollama model not pulled | `ollama pull xyz` then retry. |
+| `Assistant model 'xyz' not found. Run 'ollama pull xyz' and retry.` | Agent detected a missing Ollama model (either at install-time or runtime) | Pull the model with `ollama pull xyz` or set an alternative model via `--assistant-model` / `--robot-model`. If this happens during automated runs (installer or CI) use `--no-pull-models` to skip pulls and inspect logs for the exact failure reason. |
 | Frequent context rebuild logs | Oversized conversation or results | Reduce `--max-rounds`, `--max-context-turns`, or initial token settings. |
 | Many rate limit warnings | DDGS provider throttling | Lower concurrency (accept defaults) or narrow `--ddg-backend` to a single engine like `duckduckgo`. |
 | Empty search results | Provider mix mismatch | Retry with a specific backend (`--ddg-backend duckduckgo`/`bing`) or broaden query phrasing. |
