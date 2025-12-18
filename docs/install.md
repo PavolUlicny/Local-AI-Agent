@@ -50,6 +50,8 @@ python -m scripts.install_deps
 
 If you want to force a specific interpreter, pass `--python /path/to/python` (or on Windows an explicit path like `--python "C:\\Python312\\python.exe"`) to the installer. The installer will verify the chosen interpreter is Python 3.12 and will exit with an actionable error if not.
 
+Tip: the installer includes a discovery routine (`find_python312`) that looks for exact `python3.12` executables, common pyenv shims, and typical install paths. If you see an error about verifying Python, try passing a direct interpreter path with `--python` to avoid discovery ambiguity.
+
 Other Python versions (for example, 3.10–3.11 or future releases) are untested and may produce installation or runtime errors.
 
 ### Agent runtime requirement: Ollama
