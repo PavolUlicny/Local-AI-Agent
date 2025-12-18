@@ -1,0 +1,214 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from src.search_orchestrator import SearchOrchestrator, SearchAbort
+from src.config import AgentConfig
+from src.exceptions import ResponseError
+
+
+class _StubEmbeddingClient:
+    def embed(self, text: str):  # noqa: ANN001 - simple stub
+        return [0.1, 0.2]
+
+
+def _inputs_builder(*args, **kwargs):
+    return {}
+
+
+def test_search_orchestrator_raises_on_result_filter_model_missing() -> None:
+    cfg = AgentConfig()
+
+    def ddg_results(q: str):
+        return [{"title": "T", "link": "http://x", "snippet": "S"}]
+
+    # result_filter raises ResponseError with not found
+    class BadChain:
+        def invoke(self, inputs):  # noqa: ANN001 - failure
+            raise ResponseError("Model Not Found: Robot model not found")
+
+    chains = {"result_filter": BadChain()}
+
+    orch = SearchOrchestrator(
+        cfg,
+        ddg_results=ddg_results,
+        embedding_client=_StubEmbeddingClient(),
+        context_similarity=lambda a, b, c: 0.0,
+        inputs_builder=_inputs_builder,
+        reduce_context_and_rebuild=lambda key, label: None,
+        rebuild_counts={"relevance": 0, "planning": 0, "query_filter": 0},
+        char_budget=lambda x: x,
+        mark_error=lambda m: m,
+    )
+
+    with pytest.raises(SearchAbort):
+        orch.run(
+            chains=chains,
+            should_search=True,
+            user_query="q",
+            current_datetime="d",
+            current_year="y",
+            current_month="m",
+            current_day="dd",
+            conversation_text="c",
+            prior_responses_text="p",
+            question_embedding=None,
+            topic_embedding_current=None,
+            # provide a non-empty topics set so relevance LLM runs
+            topic_keywords={"x"},
+            primary_search_query="q",
+        )
+
+
+class DummyEmbedding:
+    def __init__(self, vec):
+        self.vec = vec
+
+    def embed(self, text: str):  # noqa: ANN001
+        return list(self.vec)
+
+
+def test_result_included_when_similarity_exceeds_threshold() -> None:
+    cfg = AgentConfig(embedding_result_similarity_threshold=0.1)
+
+    def ddg_results(q: str):
+        return [{"title": "T", "link": "http://x", "snippet": "S"}]
+
+    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "NO")}
+
+    orch = SearchOrchestrator(
+        cfg,
+        ddg_results=ddg_results,
+        embedding_client=DummyEmbedding([1.0]),
+        context_similarity=lambda a, b, c: 0.2,
+        inputs_builder=lambda *a, **k: {},
+        reduce_context_and_rebuild=lambda key, label: None,
+        rebuild_counts={"relevance": 0, "planning": 0, "query_filter": 0},
+        char_budget=lambda x: x,
+        mark_error=lambda m: m,
+    )
+
+    aggregated, kws = orch.run(
+        chains=chains,
+        should_search=True,
+        user_query="q",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        conversation_text="c",
+        prior_responses_text="p",
+        question_embedding=[1.0],
+        topic_embedding_current=None,
+        topic_keywords=set(),
+        primary_search_query="q",
+    )
+
+    assert aggregated
+
+
+def test_result_accepted_by_result_filter() -> None:
+    cfg = AgentConfig(embedding_result_similarity_threshold=0.5)
+
+    def ddg_results(q: str):
+        return [{"title": "T", "link": "http://x", "snippet": "S"}]
+
+    class RF:
+        def __init__(self):
+            self.called = 0
+
+        def invoke(self, inputs):  # noqa: ANN001
+            self.called += 1
+            return "YES"
+
+    rf = RF()
+    chains = {"result_filter": rf}
+
+    orch = SearchOrchestrator(
+        cfg,
+        ddg_results=ddg_results,
+        embedding_client=DummyEmbedding([0.0]),
+        context_similarity=lambda a, b, c: 0.0,
+        inputs_builder=lambda *a, **k: {},
+        reduce_context_and_rebuild=lambda key, label: None,
+        rebuild_counts={"relevance": 0, "planning": 0, "query_filter": 0},
+        char_budget=lambda x: x,
+        mark_error=lambda m: m,
+    )
+
+    aggregated, kws = orch.run(
+        chains=chains,
+        should_search=True,
+        user_query="q",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        conversation_text="c",
+        prior_responses_text="p",
+        question_embedding=None,
+        topic_embedding_current=None,
+        topic_keywords={"some"},
+        primary_search_query="q",
+    )
+
+    assert aggregated
+    assert rf.called >= 1
+
+
+def test_relevance_retry_on_context_length_then_accepts(monkeypatch) -> None:
+    cfg = AgentConfig(embedding_result_similarity_threshold=0.5)
+
+    def ddg_results(q: str):
+        return [{"title": "T", "link": "http://x", "snippet": "S"}]
+
+    class RF:
+        def __init__(self):
+            self.behavior = [ResponseError("Context length exceeded"), "YES"]
+
+        def invoke(self, inputs):  # noqa: ANN001
+            val = self.behavior.pop(0)
+            if isinstance(val, Exception):
+                raise val
+            return val
+
+    rf = RF()
+    calls = {"reduced": 0}
+
+    def reduce(key, label):
+        calls["reduced"] += 1
+
+    chains = {"result_filter": rf}
+
+    orch = SearchOrchestrator(
+        cfg,
+        ddg_results=ddg_results,
+        embedding_client=DummyEmbedding([0.0]),
+        context_similarity=lambda a, b, c: 0.0,
+        inputs_builder=lambda *a, **k: {},
+        reduce_context_and_rebuild=reduce,
+        rebuild_counts={"relevance": 0, "planning": 0, "query_filter": 0},
+        char_budget=lambda x: x,
+        mark_error=lambda m: m,
+    )
+
+    aggregated, kws = orch.run(
+        chains=chains,
+        should_search=True,
+        user_query="q",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        conversation_text="c",
+        prior_responses_text="p",
+        question_embedding=None,
+        topic_embedding_current=None,
+        topic_keywords={"some"},
+        primary_search_query="q",
+    )
+
+    assert aggregated
+    assert calls["reduced"] == 1
