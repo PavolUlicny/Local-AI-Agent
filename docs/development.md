@@ -13,11 +13,6 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
 
-### Requirements (quick)
-
-- **Python 3.12** — this is the tested and supported interpreter for development and CI. The installer (`scripts/install_deps.py`) will attempt to detect a Python 3.12 interpreter automatically; to force a specific interpreter pass `--python /path/to/python3.12` to the installer.
-- System memory: see `docs/install.md` or README for recommended and minimum memory guidance when running local models.
-
 Windows (PowerShell):
 
 ```powershell
