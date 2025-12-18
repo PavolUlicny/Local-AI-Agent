@@ -27,13 +27,15 @@ def update_topics(
     """
     from typing import cast
 
+    # Accept either a list or set for `question_keywords` and normalize to a
+    # set before invoking TopicManager for consistent behavior.
     return cast(
         int | None,
         agent.topic_manager.update_topics(
             topics=agent.topics,
             selected_topic_index=selected_topic_index,
             topic_keywords=topic_keywords,
-            question_keywords=question_keywords,
+            question_keywords=set(question_keywords),
             aggregated_results=aggregated_results,
             user_query=user_query,
             response_text=response_text,
