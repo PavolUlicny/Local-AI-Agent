@@ -11,9 +11,11 @@ from src import ollama
 
 def test_get_default_log_path_posix(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(ollama, "os", os)
+    # Force posix behavior even on Windows CI by overriding os.name used by the module
+    monkeypatch.setattr(ollama.os, "name", "posix")
     p = ollama.get_default_log_path()
-    assert ".local" in p
+    # normalize for windows backslashes if needed
+    assert ".local" in p.replace("\\", "/")
 
 
 def test_get_default_log_path_windows(monkeypatch, tmp_path):
