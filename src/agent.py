@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from src.context import QueryContext as QueryContextType
 else:
     PromptSessionType = Any
-    InMemoryHistoryType = Any
     SearchOrchestratorType = Any
     TopicType = Any
     QueryContextType = Any
