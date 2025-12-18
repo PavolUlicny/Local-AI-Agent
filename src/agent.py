@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List, Set, TYPE_CHECKING, cast, Callable
+from typing import Any, Iterable, List, Set, TYPE_CHECKING, cast, Callable
 import importlib
 import logging
 import sys
@@ -387,7 +387,7 @@ class Agent:
         self,
         selected_topic_index: int | None,
         topic_keywords: Set[str],
-        question_keywords: List[str],
+        question_keywords: Iterable[str],
         aggregated_results: List[str],
         user_query: str,
         response_text: str,
@@ -399,13 +399,16 @@ class Agent:
         """
         # Delegate to `src.topics.update_topics` to keep topic-related logic
         # isolated and easier to unit test.
+        # `topic_manager.update_topics` expects a set-like collection for
+        # `question_keywords`; accept any iterable here and convert to a set
+        # for deterministic behavior and to avoid unnecessary type mismatch.
         return cast(
             int | None,
             topics.update_topics(
                 self,
                 selected_topic_index,
                 topic_keywords,
-                question_keywords,
+                set(question_keywords),
                 aggregated_results,
                 user_query,
                 response_text,
