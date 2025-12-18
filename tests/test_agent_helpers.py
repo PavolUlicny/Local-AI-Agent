@@ -35,7 +35,7 @@ def make_agent(tmp_path):
     return agent
 
 
-def test_invoke_chain_safe_success():
+def test_agent_wrapper_invoke_chain_safe_success():
     agent = make_agent(None)
     agent.chains = {"ok": SimpleChain(invoke_side_effect="RESULT")}
     res = agent._invoke_chain_safe("ok", {})
