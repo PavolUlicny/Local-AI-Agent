@@ -110,6 +110,74 @@ def test_pull_models_skips_and_prints(monkeypatch, capsys):
     assert "curl -fsSL https://ollama.com/install.sh | sh" in captured.err
 
 
+def test_find_python312_prefers_exact_name(monkeypatch):
+    # Simulate python3.12 being present via exact name
+    monkeypatch.setattr(
+        inst.shutil, "which", lambda name: "/usr/bin/python3.12" if name.startswith("python3.12") else None
+    )
+    found = inst.find_python312()
+    assert found is not None and "/usr/bin/python3.12" in found
+
+
+def test_pull_models_popen_file_not_found(monkeypatch, capsys):
+    monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/ollama")
+
+    def fake_popen(*args, **kwargs):
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(inst.subprocess, "Popen", fake_popen)
+    inst.pull_models(["m1"])
+    captured = capsys.readouterr()
+    assert "ollama CLI not found while attempting to pull" in captured.err
+
+
+def test_pull_models_keyboard_interrupt(monkeypatch):
+    monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/ollama")
+
+    class P:
+        def __init__(self):
+            self.stdout = self._gen()
+            self.returncode = 0
+
+        def _gen(self):
+            yield "ok\n"
+            raise KeyboardInterrupt()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def wait(self):
+            return
+
+        def kill(self):
+            self.killed = True
+
+    def fake_popen(*args, **kwargs):
+        return P()
+
+    monkeypatch.setattr(inst.subprocess, "Popen", fake_popen)
+    with pytest.raises(KeyboardInterrupt):
+        inst.pull_models(["m1"])
+
+
+def test_parse_args_defaults_and_flags(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["prog", "--no-pull-models", "--python", "pycmd"])
+    ns = inst.parse_args()
+    assert ns.pull_models is False
+    assert ns.python == "pycmd"
+
+
+def test_main_exits_when_python_not_312(monkeypatch):
+    # force check_output to report non-3.12
+    monkeypatch.setattr(inst.subprocess, "check_output", lambda *a, **k: b"(3, 11)")
+    monkeypatch.setattr("sys.argv", ["prog", "--no-pull-models"])  # no model pulls to simplify
+    with pytest.raises(SystemExit):
+        inst.main()
+
+
 def test_find_python312_detects_candidate(monkeypatch):
     # Simulate python3.12 being present on PATH
     monkeypatch.setattr(inst.shutil, "which", lambda name: "/usr/bin/python3")
