@@ -120,6 +120,24 @@ def test_run_search_rounds_and_update_topics(monkeypatch):
     assert idx == 5
 
 
+def test_update_topics_normalizes_question_keywords_in_agent(monkeypatch):
+    agent = make_agent(None)
+
+    captured = {}
+
+    class TM:
+        def update_topics(self, **kwargs):
+            captured.update(kwargs)
+            return 7
+
+    agent.topic_manager = TM()
+    # pass a list with duplicate values to ensure conversion to set
+    idx = agent._update_topics(None, set(), ["a", "b", "a"], [], "q", "resp", None)
+    assert idx == 7
+    assert isinstance(captured.get("question_keywords"), set)
+    assert captured.get("question_keywords") == {"a", "b"}
+
+
 def test_generate_and_stream_response_success_and_stream_error(monkeypatch):
     agent = make_agent(None)
     # chain that streams chunks

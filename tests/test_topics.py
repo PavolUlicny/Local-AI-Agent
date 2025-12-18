@@ -32,3 +32,6 @@ def test_update_topics_forwards_arguments():
     assert calls["topics"] == fake_agent.topics
     assert calls["selected_topic_index"] == 1
     assert calls["user_query"] == "u"
+    # question_keywords should be normalized to a set
+    assert isinstance(calls["question_keywords"], set)
+    assert calls["question_keywords"] == {"q"}
