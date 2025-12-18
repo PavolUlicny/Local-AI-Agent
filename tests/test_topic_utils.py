@@ -11,6 +11,11 @@ def test_tail_turns_limits_history() -> None:
     assert TU.tail_turns(turns, 0) == []
 
 
+def test_tail_turns_handles_none_limit() -> None:
+    turns = [("u", "a")]
+    assert TU.tail_turns(turns, None) == []
+
+
 def test_topic_brief_includes_summary_and_keywords() -> None:
     topic = TU.Topic(keywords={"renewable", "policy", "tax"})
     topic.summary = "Key findings on renewable incentives in 2024."
