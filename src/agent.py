@@ -11,7 +11,6 @@ ANSI: Any | None
 InMemoryHistory: Any | None
 if TYPE_CHECKING:
     from prompt_toolkit import PromptSession as PromptSessionType
-    from prompt_toolkit.history import InMemoryHistory as InMemoryHistoryType
     from src.search_orchestrator import SearchOrchestrator as SearchOrchestratorType
     from src.topic_utils import Topic as TopicType
     from src.context import QueryContext as QueryContextType
