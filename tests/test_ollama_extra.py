@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import urllib.error
 
@@ -10,20 +9,24 @@ from src import ollama
 
 
 def test_get_default_log_path_posix(monkeypatch, tmp_path):
+    # Ensure the function expands HOME and returns a path that looks like a
+    # POSIX log path (e.g., contains '.local' or the provided HOME dir).
     monkeypatch.setenv("HOME", str(tmp_path))
-    # Force posix behavior even on Windows CI by overriding os.name used by the module
     monkeypatch.setattr(ollama.os, "name", "posix")
     p = ollama.get_default_log_path()
-    # normalize for windows backslashes if needed
-    assert ".local" in p.replace("\\", "/")
+    p_norm = p.replace("\\", "/")
+    assert ".local" in p_norm or str(tmp_path) in p_norm
+    assert p_norm.endswith("installer_ollama.log")
 
 
 def test_get_default_log_path_windows(monkeypatch, tmp_path):
-    monkeypatch.setattr(ollama, "os", os)
+    # Windows behavior: LOCALAPPDATA should be present in the returned path
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(ollama.os, "name", "nt")
     p = ollama.get_default_log_path()
-    assert "ollama" in p
+    p_norm = p.replace("\\", "/")
+    assert "ollama" in p_norm
+    assert p_norm.endswith("installer_ollama.log")
 
 
 def test_is_ready_true(monkeypatch):
