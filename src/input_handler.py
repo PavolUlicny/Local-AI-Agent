@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Tuple, Callable, TYPE_CHECKING
+from typing import Any, Tuple, Callable
 import logging
-
-if TYPE_CHECKING:
-    from prompt_toolkit import PromptSession as PromptSessionType
-    from prompt_toolkit.formatted_text import ANSI as ANSIType
-    from prompt_toolkit.history import InMemoryHistory as InMemoryHistoryType
-else:
-    PromptSessionType = Any
-    ANSIType = Any
-    InMemoryHistoryType = Any
 
 # Runtime variables for optional prompt_toolkit components. Annotate as
 # optional to avoid mypy treating them as immutable types when set to None.
