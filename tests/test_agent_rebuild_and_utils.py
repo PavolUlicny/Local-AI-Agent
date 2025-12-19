@@ -57,3 +57,80 @@ def test_pick_seed_query_more_edge_cases() -> None:
     # uppercase prefix handling
     seed_text = "SEED: Detailed findings about XYZ"
     assert T.pick_seed_query(seed_text, fallback) == "Detailed findings about XYZ"
+
+
+def test_handle_search_decision_context_length_rebuild_and_recovers(monkeypatch):
+    from src.exceptions import ResponseError
+
+    agent = Agent(AgentConfig())
+
+    # Make _decide_should_search raise context-length response error initially
+    def raise_context(*args, **kwargs):
+        raise ResponseError("Context length exceeded")
+
+    monkeypatch.setattr(agent, "_decide_should_search", raise_context)
+
+    # Provide a chain that will return SEARCH when invoked directly after rebuild
+    class GoodChain:
+        def invoke(self, inputs):
+            return "SEARCH"
+
+    agent.chains["search_decision"] = GoodChain()
+
+    # Stub reduce/rebuild to avoid invoking real LLMs during test
+    monkeypatch.setattr(
+        agent,
+        "_reduce_context_and_rebuild",
+        lambda key, label: agent.rebuild_counts.__setitem__(key, agent.rebuild_counts.get(key, 0) + 1),
+    )
+
+    # Stub downstream behavior to avoid heavy operations
+    monkeypatch.setattr(agent, "_generate_search_seed", lambda *a, **k: "q")
+    monkeypatch.setattr(agent, "_run_search_rounds", lambda *a, **k: ([], set()))
+    monkeypatch.setattr(agent, "_generate_and_stream_response", lambda *a, **k: "answer")
+    monkeypatch.setattr(agent, "_update_topics", lambda *a, **k: None)
+
+    # Ensure rebuild count increments when handling context-length
+    orig = agent.rebuild_counts.get("search_decision", 0)
+    res = agent._handle_query_core("question", one_shot=True)
+    assert res == "answer"
+    assert agent.rebuild_counts["search_decision"] > orig
+
+
+def test_seed_generation_context_length_rebuild_and_recovers(monkeypatch):
+    from src.exceptions import ResponseError
+
+    agent = Agent(AgentConfig())
+
+    # force classifier to decide search so seed path executes
+    monkeypatch.setattr(agent, "_decide_should_search", lambda *a, **k: True)
+
+    # Make _generate_search_seed raise context-length initially
+    def raise_context(*a, **k):
+        raise ResponseError("Context length exceeded")
+
+    monkeypatch.setattr(agent, "_generate_search_seed", raise_context)
+
+    # Stub reduce/rebuild to avoid invoking real LLMs during test
+    monkeypatch.setattr(
+        agent,
+        "_reduce_context_and_rebuild",
+        lambda key, label: agent.rebuild_counts.__setitem__(key, agent.rebuild_counts.get(key, 0) + 1),
+    )
+
+    # Provide a seed chain that would return a usable seed on retry
+    class SeedChain:
+        def invoke(self, inputs):
+            return "Some seed\n"
+
+    agent.chains["seed"] = SeedChain()
+
+    # Stub downstream to avoid heavy operations
+    monkeypatch.setattr(agent, "_run_search_rounds", lambda *a, **k: ([], set()))
+    monkeypatch.setattr(agent, "_generate_and_stream_response", lambda *a, **k: "answer")
+    monkeypatch.setattr(agent, "_update_topics", lambda *a, **k: None)
+
+    orig = agent.rebuild_counts.get("seed", 0)
+    res = agent._handle_query_core("question", one_shot=True)
+    assert res == "answer"
+    assert agent.rebuild_counts["seed"] > orig
