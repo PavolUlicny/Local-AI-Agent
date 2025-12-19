@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 from src import url_utils as U
 
 
-import pytest
+def test_canonicalize_basic_cases() -> None:
+    assert U.canonicalize_url("") == ""
+    assert U.canonicalize_url("//example.com/path") == "http://example.com/path"
+    assert U.canonicalize_url("http://www.Example.COM/") == "http://example.com"
+    assert U.canonicalize_url("example.com/dir/") == "http://example.com/dir"
 
 
 @pytest.mark.parametrize(

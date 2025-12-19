@@ -24,13 +24,16 @@ def canonicalize_url(url: str) -> str:
         scheme = (parsed.scheme or "http").lower()
         netloc = (parsed.netloc or "").lower()
         path = parsed.path or ""
+        # Normalize root path to empty string so canonical form has no trailing slash
+        if path == "/":
+            path = ""
         if netloc.startswith("www."):
             netloc = netloc[4:]
         if netloc.endswith(":80") and scheme == "http":
             netloc = netloc[:-3]
         if netloc.endswith(":443") and scheme == "https":
             netloc = netloc[:-4]
-        if path.endswith("/") and path != "/":
+        if path.endswith("/"):
             path = path.rstrip("/")
         return urlunparse((scheme, netloc, path, "", parsed.query, ""))
     except Exception:

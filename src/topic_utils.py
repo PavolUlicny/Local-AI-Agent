@@ -25,7 +25,12 @@ class Topic:
     embedding: List[float] | None = None
 
 
-def tail_turns(turns: TopicTurns, limit: int) -> TopicTurns:
+def tail_turns(turns: TopicTurns, limit: int | None) -> TopicTurns:
+    """Return the last `limit` turns or an empty list when `limit` is None/<=0.
+
+    The `limit` parameter is optional to allow callers to express the
+    absence of a turn window using `None` without forcing a numeric value.
+    """
     if limit is None or limit <= 0:
         return []
     return turns[-limit:]

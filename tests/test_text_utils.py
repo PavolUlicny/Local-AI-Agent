@@ -23,3 +23,30 @@ def test_context_regex_accepts_spaced_follow_up() -> None:
     validated = T.regex_validate("follow up", T.PATTERN_CONTEXT, "NEW_TOPIC")
     assert validated == "FOLLOW UP"
     assert T.normalize_context_decision(validated) == "FOLLOW_UP"
+
+
+def test_truncate_result_word_boundary_and_punctuation() -> None:
+    text = "This is a long sentence that will be cut off. End." * 10
+    truncated = T.truncate_result(text, max_chars=50)
+    assert truncated.endswith("...")
+    # ensure we don't end with punctuation before ellipsis
+    assert not truncated[:-3].endswith(".,;:")
+
+
+def test_is_context_length_error_indicators() -> None:
+    phrases = [
+        "context length exceeded",
+        "token limit reached",
+        "prompt too long",
+        "sequence length exceeded",
+        "input too long",
+    ]
+    for p in phrases:
+        assert T.is_context_length_error(p)
+
+
+def test_normalize_context_decision_variants() -> None:
+    assert T.normalize_context_decision("follow up") == "FOLLOW_UP"
+    assert T.normalize_context_decision("NEW-TOPIC") == "NEW_TOPIC"
+    assert T.normalize_context_decision("expand") == "EXPAND"
+    assert T.normalize_context_decision("") == "NEW_TOPIC"

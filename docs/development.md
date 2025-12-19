@@ -4,8 +4,6 @@
 
 It is recommended to create and activate the project venv first, then install dev dependencies into the venv.
 
-Note: macOS is not officially supported or tested by this project. The instructions target Linux and Windows; macOS users may try the Linux steps at their own risk.
-
 Linux:
 
 ```bash
@@ -60,6 +58,16 @@ Linux:
 
 ```bash
 ./.venv/bin/python -m pytest -q
+```
+
+### Running CI-like checks locally
+
+To emulate the CI job locally (no model pulls, fast/deterministic), run the installer without model pulls and then run tests and linters, for example:
+
+```bash
+./.venv/bin/python -m scripts.install_deps --no-pull-models
+./.venv/bin/python -m pytest -q
+pre-commit run --all-files
 ```
 
 Windows (PowerShell / cmd):

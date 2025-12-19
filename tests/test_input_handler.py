@@ -1,4 +1,4 @@
-from src.input_handler import InputHandler, build_inputs
+from src.input_handler import build_inputs, InputHandler
 
 
 def test_build_inputs_basic():

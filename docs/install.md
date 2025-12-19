@@ -2,7 +2,7 @@
 
 This project requires the Ollama runtime. Follow these steps to install it.
 
-Note: macOS is not officially supported or tested by this project. The documentation and CI target Linux and Windows; if you must run on macOS you may try the Linux instructions at your own risk.
+Note: Linux and Windows are the primary supported platforms and are the focus of CI testing. macOS may work but is not officially tested here; adapt the POSIX instructions as needed and file an issue if you hit platform-specific problems.
 
 ### Linux
 
@@ -49,6 +49,8 @@ python -m scripts.install_deps
 ```
 
 If you want to force a specific interpreter, pass `--python /path/to/python` (or on Windows an explicit path like `--python "C:\\Python312\\python.exe"`) to the installer. The installer will verify the chosen interpreter is Python 3.12 and will exit with an actionable error if not.
+
+Tip: the installer includes a discovery routine (`find_python312`) that looks for exact `python3.12` executables, common pyenv shims, and typical install paths. If you see an error about verifying Python, try passing a direct interpreter path with `--python` to avoid discovery ambiguity.
 
 Other Python versions (for example, 3.10–3.11 or future releases) are untested and may produce installation or runtime errors.
 
@@ -200,7 +202,7 @@ Notes:
 
 - The RAM/VRAM examples above are approximate; actual memory requirements depend on model size, quantization, and workload.
 
-- More memory allows larger `--num-ctx` and fewer automatic rebuild (halving) events.
+- More memory allows larger `--assistant-num-ctx` / `--robot-num-ctx` and fewer automatic rebuild (halving) events.
 - Python: Confirmed to run on Python 3.12 (tested in CI). Other Python versions (for example, 3.10–3.11 or future releases) are untested and not guaranteed to work.
 - OS: Linux is expected to work. Windows is supported for the Ollama runtime; Python venv activation commands differ.
 - If running CPU‑only, ensure fast SSD swap; avoid paging spikes by lowering `--num-predict` if memory pressure appears.
