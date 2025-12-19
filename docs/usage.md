@@ -97,7 +97,7 @@ Windows users: the `Makefile` targets are primarily for Unix-like shells; on Win
 ## Performance Considerations
 
 - Each search round adds latency; tune `--max-rounds` and `--search-max-results` for speed.
- - Rebuilds (context halving) reduce available context; reduce `--assistant-num-ctx` / `--robot-num-ctx` if you see many rebuilds.
+- Rebuilds (context halving) reduce available context; reduce `--assistant-num-ctx` / `--robot-num-ctx` if you see many rebuilds.
 
 ## Configuration Guidelines
 
