@@ -76,7 +76,11 @@ def test_result_included_when_similarity_exceeds_threshold() -> None:
     def ddg_results(q: str):
         return [{"title": "T", "link": "http://x", "snippet": "S"}]
 
-    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "NO")}
+    chains = {
+        "result_filter": SimpleNamespace(invoke=lambda inputs: "NO"),
+        "planning": SimpleNamespace(invoke=lambda inputs: "NONE"),
+        "query_filter": SimpleNamespace(invoke=lambda inputs: "NO"),
+    }
 
     orch = SearchOrchestrator(
         cfg,
@@ -124,7 +128,11 @@ def test_result_accepted_by_result_filter() -> None:
             return "YES"
 
     rf = RF()
-    chains = {"result_filter": rf}
+    chains = {
+        "result_filter": rf,
+        "planning": SimpleNamespace(invoke=lambda inputs: "NONE"),
+        "query_filter": SimpleNamespace(invoke=lambda inputs: "NO"),
+    }
 
     orch = SearchOrchestrator(
         cfg,
@@ -180,7 +188,11 @@ def test_relevance_retry_on_context_length_then_accepts(monkeypatch) -> None:
     def reduce(key, label):
         calls["reduced"] += 1
 
-    chains = {"result_filter": rf}
+    chains = {
+        "result_filter": rf,
+        "planning": SimpleNamespace(invoke=lambda inputs: "NONE"),
+        "query_filter": SimpleNamespace(invoke=lambda inputs: "NO"),
+    }
 
     orch = SearchOrchestrator(
         cfg,
