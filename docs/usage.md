@@ -4,7 +4,7 @@ The agent exposes many CLI flags for tuning behavior. Use the table below for qu
 
 | Flag | Short | Default | Description |
 | ------ | ------- | --------- | ------------- |
-| `--no-auto-search` | `--nas` | off | Force NO_SEARCH unless logic changed manually. |
+| `--no-auto-search` | `--nas` | off | Disable automatic web search decision (use `--force-search` to always perform web search). |
 | `--force-search` | `--fs` | off | Bypass classifier and always perform SEARCH for the current turn. |
 | `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds (seed + planned). |
 | `--max-context-turns` | `--mct` | `8` | Turns retained from a topic for context injection. |
@@ -31,7 +31,7 @@ The agent exposes many CLI flags for tuning behavior. Use the table below for qu
 | `--search-timeout` | `--st` | `10.0` | Per-request DDGS timeout in seconds. |
 | `--log-level` | `--ll` | `WARNING` | Logging verbosity. |
 | `--log-file` | `--lf` | `None` | Optional file log path. |
-| `--log-console` | `--lc` | `on` | Emit logs to stderr when enabled; pass `--no-log-console` to keep the console clean. Without `--log-file`, logs are discarded. |
+| `--log-console` | `--lc` | `on` | Emit logs to stderr when enabled; pass `--no-log-console` to keep the console clean. If both `--no-log-console` and no `--log-file` are provided, logs are discarded via a NullHandler. |
 | `--question` | `--q` | `None` | One-shot non-interactive question mode. |
 | `--embedding-model` | `--em` | `embeddinggemma:300m` | Ollama embedding model used for topic similarity checks. |
 | `--embedding-similarity-threshold` | `--est` | `0.35` | Minimum cosine similarity for a topic to be considered when no keywords overlap. |
@@ -52,7 +52,7 @@ ollama pull llama3:8b
 python3 -m src.main --robot-model llama3:8b --assistant-model llama3:8b
 ```
 
-Adjust `--num-ctx` and `--num-predict` according to the model's capabilities.
+Adjust `--assistant-num-ctx` / `--robot-num-ctx` and `--assistant-num-predict` / `--robot-num-predict` according to the model's capabilities.
 
 ## Quick Start Examples
 
@@ -97,11 +97,11 @@ Windows users: the `Makefile` targets are primarily for Unix-like shells; on Win
 ## Performance Considerations
 
 - Each search round adds latency; tune `--max-rounds` and `--search-max-results` for speed.
-- Rebuilds (context halving) reduce available context; reduce `--num-ctx` if you see many rebuilds.
+ - Rebuilds (context halving) reduce available context; reduce `--assistant-num-ctx` / `--robot-num-ctx` if you see many rebuilds.
 
 ## Configuration Guidelines
 
 - Lower `--robot-temp` to strengthen determinism in planning/classification; keep near 0 for reproducibility.
 - Raise `--assistant-temp` if answers feel too rigid; lower for more formal precision.
-- If encountering repeated context length rebuilds, pre‑adjust `--num-ctx` downward instead of relying on automatic halving.
+- If encountering repeated context length rebuilds, pre‑adjust `--assistant-num-ctx` / `--robot-num-ctx` downward instead of relying on automatic halving.
 - Expanding `--max-rounds` increases latency & potential redundancy; consider balancing with stricter `--max-relevance-llm-checks`.
