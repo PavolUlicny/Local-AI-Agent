@@ -468,17 +468,6 @@ class Agent:
             ),
         )
 
-    def _prompt_messages(self) -> tuple[Any, str]:
-        return cast(tuple[Any, str], self.input_handler.prompt_messages())
-
-    def _build_prompt_session(self) -> PromptSessionType | None:
-        return cast(PromptSessionType, self.input_handler.build_prompt_session())
-
-    def _ensure_prompt_session(self) -> PromptSessionType | None:
-        # Ensure the session is available; allow InputHandler to create it lazily.
-        self._prompt_session = cast(PromptSessionType, self.input_handler.ensure_prompt_session(self._prompt_session))
-        return self._prompt_session
-
     @staticmethod
     def _context_similarity(
         candidate_embedding: List[float] | None,

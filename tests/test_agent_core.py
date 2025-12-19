@@ -75,14 +75,17 @@ def test_prompt_session_wrappers_and_read_user_query():
             return "user input"
 
     a.input_handler = IH()
-    msgs, suffix = a._prompt_messages()
+    # Use the InputHandler API directly (prompt/session helpers were
+    # moved off Agent). Ensure delegation works via the handler and that
+    # Agent still reads user input via its input_handler.
+    msgs, suffix = a.input_handler.prompt_messages()
     assert msgs == "msg"
     assert suffix == "suffix"
-    assert a._build_prompt_session() == "session"
-    # ensure_prompt_session sets internal prompt session
-    a._prompt_session = None
-    res = a._ensure_prompt_session()
-    assert res == "created"
+    assert a.input_handler.build_prompt_session() == "session"
+    # ensure_prompt_session sets internal prompt session on the handler; set
+    # Agent's stored session to the created session so _read_user_query uses it.
+    a._prompt_session = a.input_handler.ensure_prompt_session(a._prompt_session)
+    assert a._prompt_session == "created"
     assert a._read_user_query() == "user input"
 
 
