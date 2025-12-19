@@ -129,3 +129,38 @@ def test_generate_and_stream_response_generic_exception(monkeypatch):
     agent = AgentFake()
     out = response_mod.generate_and_stream_response(agent, {}, "response", one_shot=True, write_fn=lambda x: None)
     assert out is None
+
+
+def test_generate_and_stream_response_prints_ansi_header(monkeypatch):
+    # Ensure the ANSI header branch prints when ANSI is present and agent is TTY
+    monkeypatch.setattr(response_mod, "ANSI", object())
+
+    class Chain:
+        def stream(self, inputs):
+            yield "x"
+
+    printed = []
+
+    class AgentFake(SimpleNamespace):
+        def __init__(self):
+            super().__init__()
+            self.cfg = SimpleNamespace(assistant_model="m")
+            self.chains = {"response": Chain()}
+            self.rebuild_counts = {"answer": 0}
+            self._is_tty = True
+
+        def _writeln(self, text: str = ""):
+            printed.append(text)
+
+        def _write(self, text: str):
+            pass
+
+        def _mark_error(self, msg: str):
+            self._last = msg
+
+    agent = AgentFake()
+    # invoke the response generator so the header is emitted and streamed
+    out = response_mod.generate_and_stream_response(agent, {}, "response", one_shot=True, write_fn=lambda x: None)
+    assert out == "x"
+    # header should have been written first (contains [Answer])
+    assert any("[Answer]" in p for p in printed)
