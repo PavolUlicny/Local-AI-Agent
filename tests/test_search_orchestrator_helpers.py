@@ -206,3 +206,108 @@ def test_validate_candidate_query_embedding_and_filter():
     )
     # similarity 0 < default threshold (0.5) => should be False
     assert ok is False
+
+
+def test_invoke_chain_with_retry_non_context_error_behavior():
+    orch = make_orch()
+
+    class BadChain:
+        def invoke(self, inputs):
+            raise ResponseError("Some other error")
+
+    # When raise_on_non_context_error=True should raise SearchAbort
+    with pytest.raises(SearchAbort):
+        orch._invoke_chain_with_retry(
+            chain=BadChain(),
+            inputs={},
+            rebuild_key="planning",
+            rebuild_label="planning",
+            raise_on_non_context_error=True,
+        )
+
+    # When raise_on_non_context_error=False should return fallback and False
+    out, success = orch._invoke_chain_with_retry(
+        chain=BadChain(),
+        inputs={},
+        rebuild_key="planning",
+        rebuild_label="planning",
+        raise_on_non_context_error=False,
+    )
+    assert success is False
+    assert out == "NO"
+
+
+def test_check_result_relevance_llm_increments_check_count():
+    # LLM returns YES and should increment the llm check counter
+    orch = make_orch(context_similarity=lambda a, b, c: 0.0)
+
+    class RF:
+        def invoke(self, inputs):
+            return "YES"
+
+    chains = {"result_filter": RF()}
+    is_rel, checks = orch._check_result_relevance(
+        result_text="txt",
+        keywords_source="k",
+        topic_keywords={"kw"},
+        question_embedding=None,
+        topic_embedding_current=None,
+        current_query="q",
+        chains=chains,
+        conversation_text="c",
+        user_query="q",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        relevance_llm_checks=0,
+    )
+    assert is_rel is True
+    assert checks == 1
+
+
+def test_enqueue_validated_queries_respects_duplicates_and_max_rounds():
+    orch = make_orch()
+    chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
+
+    # Duplicates should be skipped; unique candidates enqueued
+    pending = []
+    seen = set()
+    orch._enqueue_validated_queries(
+        candidate_queries=["A", "A", "B"],
+        pending_queries=pending,
+        seen_query_norms=seen,
+        max_rounds=10,
+        chains=chains,
+        question_embedding=None,
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+    )
+    assert pending == ["A", "B"]
+    assert {x.lower() for x in seen} == {"a", "b"}
+
+    # Respect max_rounds: when pending length >= max_rounds no new items are added
+    pending2 = ["x"]
+    seen2 = {"x"}
+    orch._enqueue_validated_queries(
+        candidate_queries=["C"],
+        pending_queries=pending2,
+        seen_query_norms=seen2,
+        max_rounds=1,
+        chains=chains,
+        question_embedding=None,
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+    )
+    assert pending2 == ["x"]
