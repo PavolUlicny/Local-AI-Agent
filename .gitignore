@@ -208,3 +208,6 @@ __marimo__/
 
 # Log files
 *.log
+
+# Claude settings
+.claude
