@@ -4,8 +4,6 @@
 
 It is recommended to create and activate the project venv first, then install dev dependencies into the venv.
 
-Note: macOS is not officially supported or tested by this project. The instructions target Linux and Windows; macOS users may try the Linux steps at their own risk.
-
 Linux:
 
 ```bash
