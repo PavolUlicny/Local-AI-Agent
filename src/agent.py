@@ -258,48 +258,18 @@ class Agent:
         return agent_utils.invoke_chain_safe(self, chain_name, inputs, rebuild_key)
 
     def _decide_should_search(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> bool:
-        """Run the `search_decision` classifier and return True when it decides SEARCH.
+        """Run the search_decision classifier and return True if SEARCH decided.
 
-        This helper performs the chain invoke and validation. It does not swallow
-        `_exceptions.ResponseError` so the caller can preserve existing control-flow.
+        Delegates to `agent_utils.decide_should_search` for implementation.
         """
-        decision_raw = self._invoke_chain_safe(
-            "search_decision",
-            self._inputs(
-                ctx.current_datetime,
-                ctx.current_year,
-                ctx.current_month,
-                ctx.current_day,
-                ctx.conversation_text,
-                user_query,
-                known_answers=prior_responses_text,
-            ),
-            rebuild_key="search_decision",
-        )
-        decision_validated = cast(
-            str, _text_utils_mod.regex_validate(str(decision_raw), _text_utils_mod.PATTERN_SEARCH_DECISION, "SEARCH")
-        )
-        return decision_validated == "SEARCH"
+        return cast(bool, agent_utils.decide_should_search(self, ctx, user_query, prior_responses_text))
 
     def _generate_search_seed(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> str:
-        """Invoke the `seed` chain and pick a seed query. May raise ResponseError to be
-        handled by the caller in the same way as the original code.
+        """Generate a refined search query via the seed chain.
+
+        Delegates to `agent_utils.generate_search_seed` for implementation.
         """
-        seed_raw = self._invoke_chain_safe(
-            "seed",
-            self._inputs(
-                ctx.current_datetime,
-                ctx.current_year,
-                ctx.current_month,
-                ctx.current_day,
-                ctx.conversation_text,
-                user_query,
-                known_answers=prior_responses_text,
-            ),
-            rebuild_key="seed",
-        )
-        seed_text = str(seed_raw).strip()
-        return cast(str, _text_utils_mod.pick_seed_query(seed_text, user_query))
+        return cast(str, agent_utils.generate_search_seed(self, ctx, user_query, prior_responses_text))
 
     def _run_search_rounds(
         self,
@@ -523,6 +493,7 @@ class Agent:
             self._restore_llm_params()
 
     def _handle_query_core(self, user_query: str, one_shot: bool) -> str | None:
+        # Phase 1: Context & State Initialization
         self._clear_error()
         self._reset_rebuild_counts()
         ctx = build_query_context(self, user_query)
@@ -541,6 +512,7 @@ class Agent:
 
         aggregated_results: List[str] = []
 
+        # Phase 2: Search Decision
         should_search = bool(cfg.force_search)
         if not should_search and cfg.auto_search_decision:
             try:
@@ -549,78 +521,27 @@ class Agent:
                 if "not found" in str(exc).lower():
                     _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                     return None
-                if _text_utils_mod.is_context_length_error(str(exc)):
-                    if self.rebuild_counts["search_decision"] < _text_utils_mod.MAX_REBUILD_RETRIES:
-                        self._reduce_context_and_rebuild("search_decision", "search decision")
-                        try:
-                            decision_raw = self.chains["search_decision"].invoke(
-                                self._inputs(
-                                    current_datetime,
-                                    current_year,
-                                    current_month,
-                                    current_day,
-                                    conversation_text,
-                                    user_query,
-                                    known_answers=prior_responses_text,
-                                )
-                            )
-                            decision_validated = _text_utils_mod.regex_validate(
-                                str(decision_raw), _text_utils_mod.PATTERN_SEARCH_DECISION, "SEARCH"
-                            )
-                            should_search = decision_validated == "SEARCH"
-                        except _exceptions.ResponseError:
-                            should_search = False
-                    else:
-                        logging.info("Reached search decision rebuild cap; defaulting to NO_SEARCH fallback.")
-                        should_search = False
-                else:
-                    logging.error("Search decision failed: %s", exc)
-                    self._mark_error("Search decision failed; please retry.")
-                    return None
-            except Exception as exc:
-                # Default to SEARCH on unexpected classifier errors to avoid suppressing needed lookups.
-                logging.warning("Search decision crashed; defaulting to SEARCH. Error: %s", exc)
-                should_search = True
+                # Context length and other errors already handled by agent_utils.decide_should_search
+                logging.error("Search decision failed: %s", exc)
+                self._mark_error("Search decision failed; please retry.")
+                return None
         elif not cfg.auto_search_decision and not cfg.force_search:
             should_search = False
 
+        # Phase 3: Search Seed Generation & Search Orchestration
         if should_search:
-            primary_search_query = user_query
             try:
                 primary_search_query = self._generate_search_seed(ctx, user_query, prior_responses_text)
             except _exceptions.ResponseError as exc:
                 if "not found" in str(exc).lower():
                     _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
                     return None
-                if _text_utils_mod.is_context_length_error(str(exc)):
-                    if self.rebuild_counts["seed"] < _text_utils_mod.MAX_REBUILD_RETRIES:
-                        self._reduce_context_and_rebuild("seed", "seed")
-                        try:
-                            seed_raw = self.chains["seed"].invoke(
-                                self._inputs(
-                                    current_datetime,
-                                    current_year,
-                                    current_month,
-                                    current_day,
-                                    conversation_text,
-                                    user_query,
-                                    known_answers=prior_responses_text,
-                                )
-                            )
-                            seed_text = str(seed_raw).strip()
-                            primary_search_query = _text_utils_mod.pick_seed_query(seed_text, user_query)
-                        except _exceptions.ResponseError:
-                            primary_search_query = user_query
-                    else:
-                        logging.info("Reached seed rebuild cap; using original user query as search seed.")
-                        primary_search_query = user_query
-                else:
-                    logging.error("Seed generation failed: %s", exc)
-                    self._mark_error("Seed query generation failed; please retry.")
-                    return None
-            except Exception as exc:
-                logging.warning(f"Seed generation failed unexpectedly; using original query. Error: {exc}")
-                primary_search_query = user_query
+                # Context length and other errors already handled by agent_utils.generate_search_seed
+                logging.error("Seed generation failed: %s", exc)
+                self._mark_error("Seed query generation failed; please retry.")
+                return None
+
+            # Phase 4: Search Orchestration
             try:
                 aggregated_results, topic_keywords = self._run_search_rounds(
                     ctx,
@@ -633,6 +554,8 @@ class Agent:
                 )
             except _search_orchestrator_mod.SearchAbort:
                 return None
+
+        # Phase 5: Response Generation
         search_results_text = (
             "\n\n".join(aggregated_results)
             if should_search and aggregated_results
@@ -652,10 +575,11 @@ class Agent:
             prior_responses_text,
             search_results_text if should_search else None,
         )
-        # Generate and stream the response; helper returns final text or None on failure
         response_text = self._generate_and_stream_response(resp_inputs, chain_name, one_shot)
         if response_text is None:
             return None
+
+        # Phase 6: Topic Update
         selected_topic_index = self._update_topics(
             selected_topic_index,
             topic_keywords,
