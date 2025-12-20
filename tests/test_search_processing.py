@@ -239,3 +239,64 @@ def test_process_search_round_filters_irrelevant_results():
     )
 
     assert results == []
+
+
+def test_process_search_result_extracts_and_adds_keywords():
+    """Test process_search_result extracts keywords from accepted results."""
+    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
+    topic_keywords = set()
+
+    res = {"title": "Machine Learning Tutorial", "link": "http://x", "snippet": "Learn about neural networks"}
+
+    common = _make_result_kwargs()
+
+    result_text, checks = process_search_result(
+        result=res,
+        seen_result_hashes=set(),
+        seen_urls=set(),
+        topic_keywords=topic_keywords,
+        question_embedding=None,
+        topic_embedding_current=None,
+        current_query="q",
+        chains=chains,
+        conversation_text="c",
+        user_query="q",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        relevance_llm_checks=0,
+        **common,
+    )
+
+    assert result_text is not None
+    # Keywords should have been extracted and added
+    assert len(topic_keywords) > 0
+
+
+def test_process_search_round_handles_empty_results_list():
+    """Test process_search_round handles empty list from DDG gracefully."""
+    chains = {}
+
+    common = _make_round_kwargs(ddg_results=lambda q: [])  # Empty list
+
+    results = process_search_round(
+        current_query="test",
+        chains=chains,
+        seen_result_hashes=set(),
+        seen_urls=set(),
+        topic_keywords=set(),
+        question_embedding=None,
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        **common,
+    )
+
+    assert results == []
