@@ -173,3 +173,93 @@ def test_validate_candidate_query_no_embeddings_still_filters():
 
     # Should skip embedding check and go straight to LLM filter
     assert ok is True
+
+
+def test_check_result_relevance_uses_topic_embedding_when_question_embedding_none():
+    """Test check_result_relevance uses topic_embedding when question_embedding is None."""
+    cfg = AgentConfig(embedding_result_similarity_threshold=0.1)
+    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "NO")}
+
+    common = _make_common_kwargs(
+        cfg=cfg,
+        context_similarity=lambda a, b, c: 0.8,  # High similarity
+    )
+
+    is_rel, checks = check_result_relevance(
+        result_text="some text",
+        keywords_source="some",
+        topic_keywords=set(),
+        question_embedding=None,  # No question embedding
+        topic_embedding_current=[0.5, 0.5],  # But topic embedding present
+        current_query="q",
+        chains=chains,
+        conversation_text="c",
+        user_query="q",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        relevance_llm_checks=0,
+        **common,
+    )
+
+    # Should use topic_embedding and pass due to high similarity
+    assert is_rel is True
+    assert checks == 0
+
+
+def test_validate_candidate_query_passes_when_similarity_high_and_llm_yes():
+    """Test validate_candidate_query accepts candidates with high similarity and LLM YES."""
+    cfg = AgentConfig(embedding_query_similarity_threshold=0.5)
+    chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "YES")}  # LLM accepts
+
+    common = _make_common_kwargs(
+        cfg=cfg,
+        context_similarity=lambda a, b, c: 0.9,  # High similarity
+    )
+
+    ok = validate_candidate_query(
+        candidate="cand",
+        chains=chains,
+        question_embedding=[1.0],
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        **common,
+    )
+
+    # High similarity (0.9 > 0.5) passes embedding check, then LLM says YES
+    assert ok is True
+
+
+def test_validate_candidate_query_rejects_when_llm_says_no():
+    """Test validate_candidate_query rejects when LLM says NO even with high similarity."""
+    cfg = AgentConfig(embedding_query_similarity_threshold=0.5)
+    chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "NO")}  # LLM rejects
+
+    common = _make_common_kwargs(
+        cfg=cfg,
+        context_similarity=lambda a, b, c: 0.9,  # High similarity
+    )
+
+    ok = validate_candidate_query(
+        candidate="cand",
+        chains=chains,
+        question_embedding=[1.0],
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        **common,
+    )
+
+    # Embedding check passes, but LLM says NO, so should be False
+    assert ok is False
