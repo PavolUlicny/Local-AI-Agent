@@ -10,8 +10,16 @@ from src.exceptions import ResponseError
 
 
 class _StubEmbeddingClient:
-    def embed(self, text: str):  # noqa: ANN001 - simple stub
+    def embed(self, text: str):
         return [0.1, 0.2]
+
+
+class DummyEmbedding:
+    def __init__(self, vec):
+        self.vec = vec
+
+    def embed(self, text: str):
+        return list(self.vec)
 
 
 def _inputs_builder(*args, **kwargs):
@@ -19,14 +27,14 @@ def _inputs_builder(*args, **kwargs):
 
 
 def test_search_orchestrator_raises_on_result_filter_model_missing() -> None:
+    """Integration test: SearchOrchestrator raises SearchAbort when result filter model is missing."""
     cfg = AgentConfig()
 
     def ddg_results(q: str):
         return [{"title": "T", "link": "http://x", "snippet": "S"}]
 
-    # result_filter raises ResponseError with not found
     class BadChain:
-        def invoke(self, inputs):  # noqa: ANN001 - failure
+        def invoke(self, inputs):
             raise ResponseError("Model Not Found: Robot model not found")
 
     chains = {"result_filter": BadChain()}
@@ -56,21 +64,13 @@ def test_search_orchestrator_raises_on_result_filter_model_missing() -> None:
             prior_responses_text="p",
             question_embedding=None,
             topic_embedding_current=None,
-            # provide a non-empty topics set so relevance LLM runs
             topic_keywords={"x"},
             primary_search_query="q",
         )
 
 
-class DummyEmbedding:
-    def __init__(self, vec):
-        self.vec = vec
-
-    def embed(self, text: str):  # noqa: ANN001
-        return list(self.vec)
-
-
 def test_result_included_when_similarity_exceeds_threshold() -> None:
+    """Integration test: Results are included when embedding similarity exceeds threshold."""
     cfg = AgentConfig(embedding_result_similarity_threshold=0.1)
 
     def ddg_results(q: str):
@@ -114,6 +114,7 @@ def test_result_included_when_similarity_exceeds_threshold() -> None:
 
 
 def test_result_accepted_by_result_filter() -> None:
+    """Integration test: Results are accepted when result filter returns YES."""
     cfg = AgentConfig(embedding_result_similarity_threshold=0.5)
 
     def ddg_results(q: str):
@@ -123,7 +124,7 @@ def test_result_accepted_by_result_filter() -> None:
         def __init__(self):
             self.called = 0
 
-        def invoke(self, inputs):  # noqa: ANN001
+        def invoke(self, inputs):
             self.called += 1
             return "YES"
 
@@ -167,6 +168,7 @@ def test_result_accepted_by_result_filter() -> None:
 
 
 def test_relevance_retry_on_context_length_then_accepts(monkeypatch) -> None:
+    """Integration test: SearchOrchestrator retries on context length error and succeeds."""
     cfg = AgentConfig(embedding_result_similarity_threshold=0.5)
 
     def ddg_results(q: str):
@@ -176,7 +178,7 @@ def test_relevance_retry_on_context_length_then_accepts(monkeypatch) -> None:
         def __init__(self):
             self.behavior = [ResponseError("Context length exceeded"), "YES"]
 
-        def invoke(self, inputs):  # noqa: ANN001
+        def invoke(self, inputs):
             val = self.behavior.pop(0)
             if isinstance(val, Exception):
                 raise val
