@@ -311,3 +311,357 @@ def test_enqueue_validated_queries_respects_duplicates_and_max_rounds():
         current_day="dd",
     )
     assert pending2 == ["x"]
+
+
+def test_process_search_round_returns_empty_when_no_ddg_results():
+    """Test _process_search_round with no results from DDG."""
+    orch = make_orch(ddg_results=lambda q: None)  # None instead of []
+    chains = {}
+
+    results = orch._process_search_round(
+        current_query="test",
+        chains=chains,
+        seen_result_hashes=set(),
+        seen_urls=set(),
+        topic_keywords=set(),
+        question_embedding=None,
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+    )
+
+    assert results == []
+
+
+def test_process_search_round_filters_irrelevant_results():
+    """Test _process_search_round filters out irrelevant results."""
+
+    def ddg(q):
+        return [
+            {"title": "T1", "link": "http://x1", "snippet": "S1"},
+            {"title": "T2", "link": "http://x2", "snippet": "S2"},
+        ]
+
+    # All results get filtered out by the filter returning NO
+    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "NO")}
+    orch = make_orch(ddg_results=ddg, context_similarity=lambda a, b, c: 0.0)
+
+    results = orch._process_search_round(
+        current_query="test",
+        chains=chains,
+        seen_result_hashes=set(),
+        seen_urls=set(),
+        topic_keywords={"kw"},  # Not empty so LLM is consulted
+        question_embedding=None,
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+    )
+
+    assert results == []
+
+
+def test_process_search_result_skips_duplicate_by_url():
+    """Test _process_search_result skips duplicate URLs."""
+    orch = make_orch()
+    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
+    seen_urls = {"http://x"}
+
+    res = {"title": "T", "link": "http://x", "snippet": "S"}
+
+    result_text, checks = orch._process_search_result(
+        result=res,
+        seen_result_hashes=set(),
+        seen_urls=seen_urls,
+        topic_keywords=set(),
+        question_embedding=None,
+        topic_embedding_current=None,
+        current_query="q",
+        chains=chains,
+        conversation_text="c",
+        user_query="q",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        relevance_llm_checks=0,
+    )
+
+    assert result_text is None
+
+
+def test_process_search_result_skips_duplicate_by_hash():
+    """Test _process_search_result skips duplicate content hashes."""
+    import hashlib
+
+    orch = make_orch()
+    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
+
+    # Pre-calculate hash
+    assembled = "Title: T\nURL: http://x\nSnippet: S"
+    h = hashlib.sha256(assembled.encode("utf-8", errors="ignore")).hexdigest()
+    seen_hashes = {h}
+
+    res = {"title": "T", "link": "http://x", "snippet": "S"}
+
+    result_text, checks = orch._process_search_result(
+        result=res,
+        seen_result_hashes=seen_hashes,
+        seen_urls=set(),
+        topic_keywords=set(),
+        question_embedding=None,
+        topic_embedding_current=None,
+        current_query="q",
+        chains=chains,
+        conversation_text="c",
+        user_query="q",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        relevance_llm_checks=0,
+    )
+
+    assert result_text is None
+
+
+def test_process_search_result_skips_empty_results():
+    """Test _process_search_result skips results with no content."""
+    orch = make_orch()
+    chains = {}
+
+    res = {"title": "", "link": "", "snippet": ""}
+
+    result_text, checks = orch._process_search_result(
+        result=res,
+        seen_result_hashes=set(),
+        seen_urls=set(),
+        topic_keywords=set(),
+        question_embedding=None,
+        topic_embedding_current=None,
+        current_query="q",
+        chains=chains,
+        conversation_text="c",
+        user_query="q",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        relevance_llm_checks=0,
+    )
+
+    assert result_text is None
+
+
+def test_check_result_relevance_respects_llm_check_limit():
+    """Test _check_result_relevance skips LLM when limit reached."""
+    cfg = AgentConfig(max_relevance_llm_checks=2, embedding_result_similarity_threshold=0.9)
+    orch = make_orch(cfg=cfg, context_similarity=lambda a, b, c: 0.0)
+    chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
+
+    is_rel, checks = orch._check_result_relevance(
+        result_text="this text about dogs",
+        keywords_source="dogs",
+        topic_keywords={"cats", "birds"},  # Keywords don't match "dogs"
+        question_embedding=[0.5],  # Provide embedding so tier 2 runs
+        topic_embedding_current=None,
+        current_query="q",
+        chains=chains,
+        conversation_text="c",
+        user_query="q",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        relevance_llm_checks=2,  # Already at limit
+    )
+
+    # Should be False: tier 1 fails (keyword mismatch), tier 2 fails (low similarity 0.0 < 0.9), tier 3 skipped (limit reached)
+    assert is_rel is False
+    assert checks == 2  # Unchanged
+
+
+def test_validate_candidate_query_no_embeddings_still_filters():
+    """Test _validate_candidate_query works when embeddings are None."""
+    orch = make_orch(
+        embedding_client=_StubEmbeddingClient(vec=None),
+        context_similarity=lambda a, b, c: 0.0,
+    )
+
+    # Make embedding return None
+    class NoneEmbedding:
+        def embed(self, text):  # noqa: ANN001
+            return None
+
+    orch._embedding_client = NoneEmbedding()
+
+    chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
+    ok = orch._validate_candidate_query(
+        candidate="cand",
+        chains=chains,
+        question_embedding=None,
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+    )
+
+    # Should skip embedding check and go straight to LLM filter
+    assert ok is True
+
+
+def test_invoke_chain_with_retry_returns_success_false_on_generic_exception():
+    """Test _invoke_chain_with_retry handles generic exceptions gracefully."""
+    orch = make_orch()
+
+    class BadChain:
+        def invoke(self, inputs):  # noqa: ANN001
+            raise ValueError("Unexpected error")
+
+    out, success = orch._invoke_chain_with_retry(
+        chain=BadChain(),
+        inputs={},
+        rebuild_key="test",
+        rebuild_label="test",
+        fallback_value="FALLBACK",
+    )
+
+    assert out == "FALLBACK"
+    assert success is False
+
+
+def test_generate_query_suggestions_returns_empty_on_NONE():
+    """Test _generate_query_suggestions returns empty list on NONE response."""
+    orch = make_orch()
+    chains = {"planning": SimpleNamespace(invoke=lambda inputs: "NONE")}
+
+    queries = orch._generate_query_suggestions(
+        chains=chains,
+        aggregated_results=["r1"],
+        suggestion_limit=3,
+        user_query="q",
+        conversation_text="c",
+        prior_responses_text="p",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+        raise_on_error=False,
+    )
+
+    assert queries == []
+
+
+def test_enqueue_validated_queries_handles_rejected_queries():
+    """Test _enqueue_validated_queries handles LLM rejecting queries."""
+    orch = make_orch()
+    chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "NO")}
+
+    pending = []
+    seen = set()
+    orch._enqueue_validated_queries(
+        candidate_queries=["A", "B"],
+        pending_queries=pending,
+        seen_query_norms=seen,
+        max_rounds=10,
+        chains=chains,
+        question_embedding=None,
+        topic_embedding_current=None,
+        user_query="q",
+        conversation_text="c",
+        current_datetime="d",
+        current_year="y",
+        current_month="m",
+        current_day="dd",
+    )
+
+    # All rejected, nothing enqueued
+    assert pending == []
+
+
+def test_invoke_chain_with_retry_max_rebuild_retries():
+    """Test _invoke_chain_with_retry respects MAX_REBUILD_RETRIES."""
+    from src.text_utils import MAX_REBUILD_RETRIES
+
+    calls = {"reduced": 0}
+
+    def reduce(key, label):  # noqa: ANN001
+        calls["reduced"] += 1
+
+    # Start at max-1 so we can see one more rebuild
+    orch = make_orch(
+        reduce_context_and_rebuild=reduce,
+        rebuild_counts={"test": MAX_REBUILD_RETRIES - 1},
+    )
+
+    class FailChain:
+        def __init__(self):
+            self.call_count = 0
+
+        def invoke(self, inputs):  # noqa: ANN001
+            self.call_count += 1
+            if self.call_count == 1:
+                raise ResponseError("Context length exceeded")
+            # Second call succeeds
+            return "SUCCESS"
+
+    out, success = orch._invoke_chain_with_retry(
+        chain=FailChain(),
+        inputs={},
+        rebuild_key="test",
+        rebuild_label="test",
+        fallback_value="FALLBACK",
+    )
+
+    assert out == "SUCCESS"
+    assert success is True
+    assert calls["reduced"] == 1
+
+
+def test_invoke_chain_with_retry_exceed_max_rebuilds():
+    """Test _invoke_chain_with_retry returns fallback when max rebuilds exceeded."""
+    from src.text_utils import MAX_REBUILD_RETRIES
+
+    calls = {"reduced": 0}
+
+    def reduce(key, label):  # noqa: ANN001
+        calls["reduced"] += 1
+
+    # Already at max
+    orch = make_orch(
+        reduce_context_and_rebuild=reduce,
+        rebuild_counts={"test": MAX_REBUILD_RETRIES},
+    )
+
+    class FailChain:
+        def invoke(self, inputs):  # noqa: ANN001
+            raise ResponseError("Context length exceeded")
+
+    out, success = orch._invoke_chain_with_retry(
+        chain=FailChain(),
+        inputs={},
+        rebuild_key="test",
+        rebuild_label="test",
+        fallback_value="FALLBACK",
+    )
+
+    assert out == "FALLBACK"
+    assert success is False
+    assert calls["reduced"] == 0  # No rebuild attempted
