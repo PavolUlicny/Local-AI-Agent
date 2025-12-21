@@ -61,8 +61,20 @@ search = _search_mod
 response = _response_mod
 topics = _topics_mod
 
+# Character budget calculation constants
+MIN_CHAR_BUDGET = 1024  # Minimum character budget regardless of context size
+CHARS_PER_TOKEN_ESTIMATE = 4  # Rough estimate of characters per LLM token
+CONTEXT_SAFETY_MARGIN = 0.8  # Use 80% of context to leave safety margin
+
 
 class Agent:
+    """Main agent orchestrator for conversational AI with web search capabilities.
+
+    Coordinates LLM interactions, topic management, search operations, and response
+    generation. Manages conversation context, handles user queries, and maintains
+    topic-based conversation history with semantic similarity matching.
+    """
+
     def __init__(self, cfg: AgentConfig, *, output_stream: TextIO | None = None, is_tty: bool | None = None):
         self.cfg = cfg
         self.llm_robot, self.llm_assistant = _chains.build_llms(cfg)
@@ -136,9 +148,10 @@ class Agent:
             self.rebuild_counts[key] = 0
 
     def _char_budget(self, base: int) -> int:
-        # Roughly map tokens→chars (~4 chars/token) and keep a safety margin.
+        # Roughly map tokens→chars and keep a safety margin.
         ctx_tokens = min(self.cfg.assistant_num_ctx, self.cfg.robot_num_ctx)
-        return min(base, max(1024, int(ctx_tokens * 4 * 0.8)))
+        estimated_chars = int(ctx_tokens * CHARS_PER_TOKEN_ESTIMATE * CONTEXT_SAFETY_MARGIN)
+        return min(base, max(MIN_CHAR_BUDGET, estimated_chars))
 
     def _mark_error(self, message: str) -> str:
         self._last_error = message
@@ -423,12 +436,25 @@ class Agent:
         return cast(str, self.input_handler.read_user_query(self._prompt_session))
 
     def answer_once(self, question: str) -> str | None:
+        """Process a single question and return the response.
+
+        Args:
+            question: User's question to answer.
+
+        Returns:
+            The generated response, or None if processing failed.
+        """
         try:
             return self._handle_query(question, one_shot=True)
         finally:
             self._close_clients()
 
-    def run(self) -> None:  # interactive loop
+    def run(self) -> None:
+        """Start interactive conversation loop with the user.
+
+        Reads user input, processes queries, manages conversation context,
+        and handles graceful exit on quit/interrupt signals.
+        """
         self._print_welcome_banner()
         try:
             while True:

@@ -5,6 +5,12 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class AgentConfig:
+    """Configuration parameters for Agent behavior and LLM settings.
+
+    Controls search behavior, LLM parameters, embedding thresholds, and logging.
+    All parameters have sensible defaults and can be overridden via CLI arguments.
+    """
+
     no_auto_search: bool = False
     force_search: bool = False
     max_rounds: int = 12

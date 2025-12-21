@@ -14,6 +14,13 @@ from . import model_utils as _model_utils_mod
 
 @dataclass(frozen=True)
 class QueryContext:
+    """Immutable context snapshot for processing a single user query.
+
+    Contains all information needed for query processing: datetime, user input,
+    conversation history, topic keywords, and selected topic context. Built once
+    per query and passed through the processing pipeline.
+    """
+
     current_datetime: str
     current_year: str
     current_month: str

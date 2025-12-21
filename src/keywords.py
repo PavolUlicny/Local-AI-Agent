@@ -88,6 +88,16 @@ _FOLLOWUP_PREFIXES = (
 
 
 def extract_keywords(text: str) -> Set[str]:
+    """Extract meaningful keywords from text for topic matching.
+
+    Filters out stop words, generic terms, short tokens, and digit-heavy strings.
+
+    Args:
+        text: Input text to extract keywords from.
+
+    Returns:
+        Set of normalized keyword strings.
+    """
     if not text:
         return set()
     tokens = _TOKEN_PATTERN.findall(text.lower())

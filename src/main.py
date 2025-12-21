@@ -25,6 +25,14 @@ else:
 
 
 def main(args: argparse.Namespace | None = None) -> None:
+    """Entry point for the Local AI Agent application.
+
+    Configures logging, ensures Ollama is available, creates an Agent instance,
+    and either processes a single question or enters interactive mode.
+
+    Args:
+        args: Parsed command-line arguments. If None, parses from sys.argv.
+    """
     if args is None:
         parser = build_arg_parser()
         args = parser.parse_args()
