@@ -45,7 +45,7 @@ class AgentConfig:
     embedding_history_decay: float = 0.65
     embedding_result_similarity_threshold: float = 0.5
     embedding_query_similarity_threshold: float = 0.3
-    robot_model: str = "cogito:8b"
+    robot_model: str = "phi4-mini:3.8b"
     assistant_model: str = "cogito:8b"
 
     @property
