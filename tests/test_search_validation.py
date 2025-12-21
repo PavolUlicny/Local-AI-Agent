@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from src.config import AgentConfig
+from src.search_context import SearchContext, SearchServices
 from src.search_validation import check_result_relevance, validate_candidate_query
 
 
@@ -14,17 +15,37 @@ class _StubEmbeddingClient:
         return list(self.vec) if self.vec else None
 
 
-def _make_common_kwargs(cfg=None, embedding_client=None, context_similarity=None):
-    """Create common kwargs for validation functions."""
-    return {
+def _make_search_context(user_query="q", question_embedding=None, topic_embedding_current=None, **overrides):
+    """Create SearchContext for tests."""
+    defaults = {
+        "current_datetime": "d",
+        "current_year": "y",
+        "current_month": "m",
+        "current_day": "dd",
+        "user_query": user_query,
+        "conversation_text": "c",
+        "prior_responses_text": "p",
+        "question_embedding": question_embedding,
+        "topic_embedding_current": topic_embedding_current,
+    }
+    return SearchContext(**{**defaults, **overrides})
+
+
+def _make_search_services(cfg=None, chains=None, embedding_client=None, context_similarity=None, **overrides):
+    """Create SearchServices for tests."""
+    defaults = {
         "cfg": cfg or AgentConfig(),
+        "chains": chains or {},
         "embedding_client": embedding_client or _StubEmbeddingClient(),
-        "context_similarity": context_similarity or (lambda a, b, c: 0.0),
+        "ddg_results": lambda q: [],
         "inputs_builder": lambda *a, **k: {},
         "reduce_context_and_rebuild": lambda k, label: None,
-        "rebuild_counts": {"relevance": 0, "query_filter": 0},
         "mark_error": lambda m: m,
+        "context_similarity": context_similarity or (lambda a, b, c: 0.0),
+        "char_budget": lambda n: n,
+        "rebuild_counts": {"relevance": 0, "query_filter": 0},
     }
+    return SearchServices(**{**defaults, **overrides})
 
 
 def test_check_result_relevance_embedding_threshold():
@@ -32,28 +53,21 @@ def test_check_result_relevance_embedding_threshold():
     cfg = AgentConfig(embedding_result_similarity_threshold=0.1)
     chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "NO")}
 
-    common = _make_common_kwargs(
+    context = _make_search_context(question_embedding=[1.0])
+    services = _make_search_services(
         cfg=cfg,
+        chains=chains,
         context_similarity=lambda a, b, c: 0.5,  # High similarity
     )
 
     is_rel, checks = check_result_relevance(
         result_text="some text",
         keywords_source="some",
-        topic_keywords=set(),
-        question_embedding=[1.0],
-        topic_embedding_current=None,
         current_query="q",
-        chains=chains,
-        conversation_text="c",
-        user_query="q",
-        prior_responses_text="p",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
+        topic_keywords=set(),
         relevance_llm_checks=0,
-        **common,
+        context=context,
+        services=services,
     )
 
     assert is_rel is True
@@ -68,25 +82,17 @@ def test_check_result_relevance_llm_increments_check_count():
             return "YES"
 
     chains = {"result_filter": RF()}
-    common = _make_common_kwargs()
+    context = _make_search_context()
+    services = _make_search_services(chains=chains)
 
     is_rel, checks = check_result_relevance(
         result_text="txt",
         keywords_source="k",
-        topic_keywords={"kw"},
-        question_embedding=None,
-        topic_embedding_current=None,
         current_query="q",
-        chains=chains,
-        conversation_text="c",
-        user_query="q",
-        prior_responses_text="p",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
+        topic_keywords={"kw"},
         relevance_llm_checks=0,
-        **common,
+        context=context,
+        services=services,
     )
 
     assert is_rel is True
@@ -98,25 +104,17 @@ def test_check_result_relevance_respects_llm_check_limit():
     cfg = AgentConfig(max_relevance_llm_checks=2, embedding_result_similarity_threshold=0.9)
     chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
 
-    common = _make_common_kwargs(cfg=cfg)
+    context = _make_search_context(question_embedding=[0.5])
+    services = _make_search_services(cfg=cfg, chains=chains)
 
     is_rel, checks = check_result_relevance(
         result_text="this text about dogs",
         keywords_source="dogs",
-        topic_keywords={"cats", "birds"},  # Keywords don't match "dogs"
-        question_embedding=[0.5],  # Provide embedding so tier 2 runs
-        topic_embedding_current=None,
         current_query="q",
-        chains=chains,
-        conversation_text="c",
-        user_query="q",
-        prior_responses_text="p",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
+        topic_keywords={"cats", "birds"},  # Keywords don't match "dogs"
         relevance_llm_checks=2,  # Already at limit
-        **common,
+        context=context,
+        services=services,
     )
 
     # Should be False: tier 1 fails (keyword mismatch), tier 2 fails (low similarity 0.0 < 0.9), tier 3 skipped (limit reached)
@@ -127,20 +125,13 @@ def test_check_result_relevance_respects_llm_check_limit():
 def test_validate_candidate_query_embedding_and_filter():
     """Test validate_candidate_query rejects low similarity candidates."""
     chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
-    common = _make_common_kwargs()
+    context = _make_search_context(question_embedding=[1.0])
+    services = _make_search_services(chains=chains)
 
     ok = validate_candidate_query(
         candidate="cand",
-        chains=chains,
-        question_embedding=[1.0],
-        topic_embedding_current=None,
-        user_query="q",
-        conversation_text="c",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
-        **common,
+        context=context,
+        services=services,
     )
 
     # similarity 0 < default threshold (0.5) => should be False
@@ -155,20 +146,13 @@ def test_validate_candidate_query_no_embeddings_still_filters():
             return None
 
     chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "YES")}
-    common = _make_common_kwargs(embedding_client=NoneEmbedding())
+    context = _make_search_context()
+    services = _make_search_services(chains=chains, embedding_client=NoneEmbedding())
 
     ok = validate_candidate_query(
         candidate="cand",
-        chains=chains,
-        question_embedding=None,
-        topic_embedding_current=None,
-        user_query="q",
-        conversation_text="c",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
-        **common,
+        context=context,
+        services=services,
     )
 
     # Should skip embedding check and go straight to LLM filter
@@ -180,28 +164,24 @@ def test_check_result_relevance_uses_topic_embedding_when_question_embedding_non
     cfg = AgentConfig(embedding_result_similarity_threshold=0.1)
     chains = {"result_filter": SimpleNamespace(invoke=lambda inputs: "NO")}
 
-    common = _make_common_kwargs(
+    context = _make_search_context(
+        question_embedding=None,  # No question embedding
+        topic_embedding_current=[0.5, 0.5],  # But topic embedding present
+    )
+    services = _make_search_services(
         cfg=cfg,
+        chains=chains,
         context_similarity=lambda a, b, c: 0.8,  # High similarity
     )
 
     is_rel, checks = check_result_relevance(
         result_text="some text",
         keywords_source="some",
-        topic_keywords=set(),
-        question_embedding=None,  # No question embedding
-        topic_embedding_current=[0.5, 0.5],  # But topic embedding present
         current_query="q",
-        chains=chains,
-        conversation_text="c",
-        user_query="q",
-        prior_responses_text="p",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
+        topic_keywords=set(),
         relevance_llm_checks=0,
-        **common,
+        context=context,
+        services=services,
     )
 
     # Should use topic_embedding and pass due to high similarity
@@ -214,23 +194,17 @@ def test_validate_candidate_query_passes_when_similarity_high_and_llm_yes():
     cfg = AgentConfig(embedding_query_similarity_threshold=0.5)
     chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "YES")}  # LLM accepts
 
-    common = _make_common_kwargs(
+    context = _make_search_context(question_embedding=[1.0])
+    services = _make_search_services(
         cfg=cfg,
+        chains=chains,
         context_similarity=lambda a, b, c: 0.9,  # High similarity
     )
 
     ok = validate_candidate_query(
         candidate="cand",
-        chains=chains,
-        question_embedding=[1.0],
-        topic_embedding_current=None,
-        user_query="q",
-        conversation_text="c",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
-        **common,
+        context=context,
+        services=services,
     )
 
     # High similarity (0.9 > 0.5) passes embedding check, then LLM says YES
@@ -242,23 +216,17 @@ def test_validate_candidate_query_rejects_when_llm_says_no():
     cfg = AgentConfig(embedding_query_similarity_threshold=0.5)
     chains = {"query_filter": SimpleNamespace(invoke=lambda inputs: "NO")}  # LLM rejects
 
-    common = _make_common_kwargs(
+    context = _make_search_context(question_embedding=[1.0])
+    services = _make_search_services(
         cfg=cfg,
+        chains=chains,
         context_similarity=lambda a, b, c: 0.9,  # High similarity
     )
 
     ok = validate_candidate_query(
         candidate="cand",
-        chains=chains,
-        question_embedding=[1.0],
-        topic_embedding_current=None,
-        user_query="q",
-        conversation_text="c",
-        current_datetime="d",
-        current_year="y",
-        current_month="m",
-        current_day="dd",
-        **common,
+        context=context,
+        services=services,
     )
 
     # Embedding check passes, but LLM says NO, so should be False
