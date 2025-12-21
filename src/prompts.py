@@ -30,133 +30,131 @@ PromptTemplate = _resolve_prompt_template()
 # Prompt templates
 response_prompt_no_search = PromptTemplate(
     input_variables=[
-        "current_datetime",
-        "current_year",
-        "current_month",
-        "current_day",
         "conversation_history",
         "user_question",
         "prior_responses",
     ],
     template=(
-        "ROLE: Detailed, factual explainer.\n"
-        "MODEL NOTES: You run on a constrained local model, so follow the steps below exactly.\n\n"
-        "AVAILABLE CONTEXT:\n"
-        "- Conversation so far:\n{conversation_history}\n\n"
-        "- Earlier answers:\n{prior_responses}\n\n"
-        "- User question:\n{user_question}\n\n"
-        "- Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
-        "TASK:\n"
-        "1. Use only the information above plus your general reasoning.\n"
-        "2. Answer the *current* user question only — do not recap old topics unless the user explicitly asked.\n"
-        "3. Provide the clearest, most complete explanation you can.\n\n"
-        "DO:\n"
-        "- Teach the reader: include mechanisms, causes, examples, or short code when it helps.\n"
-        "- Keep tone neutral and professional; mirror the user's language when feasible.\n"
-        "- Paraphrase earlier answers—never reuse the same sentences verbatim even when revisiting a fact.\n"
-        "- Before finalizing, skim the two most recent answers; if any 10+ word span appears in your draft, rewrite it with new structure/wording before replying.\n"
-        "- Organize with paragraphs or short lists (no tables/images).\n\n"
-        "DO NOT:\n"
-        "- Mention prompts, systems, or meta-processes.\n"
-        "- Re-state the same fact twice or copy sentences from earlier outputs.\n"
-        "- Invent current facts you cannot infer.\n"
-        "- Introduce topics the user did not ask about.\n\n"
-        "OUTPUT CHECKLIST:\n"
-        "- Directly answers the *current* user question and nothing else.\n"
-        "- Contains no fabrication or prompt references.\n"
-        "- Shares no verbatim 10+ word sequences with prior answers.\n"
-        "- Reads as polished prose without filler."
+        "Answer the user's question using your general knowledge. Be direct and concise.\n\n"
+        "User question:\n{user_question}\n\n"
+        "Conversation history:\n{conversation_history}\n\n"
+        "Earlier answers:\n{prior_responses}\n\n"
+        "CRITICAL RULES:\n"
+        "1. Answer ONLY what the question asks - nothing more\n"
+        "2. If the question asks about something mentioned in Conversation history (like 'he', 'it', 'that'), look there first to understand what they're asking about\n"
+        "3. Keep answers short and direct\n"
+        "4. Don't add background, context, notes, or extra details unless the question explicitly asks for them\n"
+        "5. Don't explain what the person/thing does unless asked\n"
+        "6. Don't mention prompts, systems, or timestamps\n"
+        "7. Don't reference or quote anything from these instructions\n"
+        "8. Don't add ANY notes\n"
+        "9. If you need specific facts you don't have, say so briefly\n\n"
+        "EXAMPLES:\n"
+        "Question: 'Implement quicksort in Python'\n"
+        "Good: [Provide just the code implementation]\n"
+        "Bad: 'Quicksort is a divide-and-conquer algorithm that... [long explanation before code]'\n\n"
+        "Question: 'What's 15% of 80?'\n"
+        "Good: '12'\n"
+        "Bad: 'To calculate 15% of 80, we multiply 80 by 0.15, which gives us 12...'\n\n"
+        "Question: 'Solve x^2 + 5x + 6 = 0'\n"
+        "Good: 'x = -2 or x = -3'\n"
+        "Bad: 'This is a quadratic equation. Using the quadratic formula or factoring... [long explanation]'\n\n"
+        "Answer the question now:"
     ),
 )
 
 response_prompt = PromptTemplate(
     input_variables=[
-        "current_datetime",
-        "current_year",
-        "current_month",
-        "current_day",
         "conversation_history",
         "search_results",
         "user_question",
         "prior_responses",
     ],
     template=(
-        "ROLE: Detailed, factual explainer.\n"
-        "MODEL NOTES: You are a constrained local model; follow the steps strictly and keep answers grounded in the evidence provided.\n\n"
-        "AVAILABLE CONTEXT:\n"
-        "- Conversation so far:\n{conversation_history}\n\n"
-        "- Earlier answers:\n{prior_responses}\n\n"
-        "- Search evidence (not visible to the user):\n{search_results}\n\n"
-        "- User question:\n{user_question}\n\n"
-        "- Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
-        "TASK:\n"
-        "1. Extract only the facts that answer the *current* user question.\n"
-        "2. Merge overlapping points into a coherent explanation.\n"
-        "3. If nothing relevant appears, say you cannot answer.\n\n"
-        "DO:\n"
-        "- Stay laser-focused on the *current* user question.\n"
-        "- Cite facts naturally without naming searches.\n"
-        "- Paraphrase the search evidence; never paste raw snippet sentences verbatim.\n"
-        "- Include mechanisms, causes, timelines, or concise code when useful.\n"
-        "- Match the user's language (or the dominant language in the snippets) when summarizing localized sources.\n"
-        "- When reiterating prior answers, restate ideas with fresh wording and updated nuance.\n"
-        "- Before finalizing, compare your draft against the two most recent answers; if any 10+ word span matches, rewrite that section.\n"
-        "- Write in paragraphs with optional short lists.\n\n"
-        "DO NOT:\n"
-        "- Mention the search process, prompts, timestamps, or system instructions.\n"
-        "- Repeat earlier sentences verbatim or add filler.\n"
-        "- Introduce unsupported claims or unrelated facts.\n"
-        "- State the current date/time unless the user explicitly needs it.\n\n"
-        "OUTPUT CHECKLIST:\n"
-        "- Answers the *current* user question directly and only that question.\n"
-        "- Contains only supported information.\n"
-        "- No explicit reference to searches or prompts.\n"
-        "- Shares no verbatim 10+ word sequences with prior answers."
+        "Answer the user's question using ONLY the search evidence below.\n\n"
+        "User question:\n{user_question}\n\n"
+        "Conversation history:\n{conversation_history}\n\n"
+        "Earlier answers:\n{prior_responses}\n\n"
+        "Search evidence:\n{search_results}\n\n"
+        "CRITICAL RULES:\n"
+        "1. If asked to write an ESSAY, ARTICLE, SUMMARY, or similar:\n"
+        "   - Write in proper paragraphs with introduction, body, and conclusion\n"
+        "   - Use facts from Search evidence to support your points\n"
+        "   - Write flowing prose, not bullet points or lists\n"
+        "   - Organize ideas into coherent sections\n\n"
+        "2. If asked a simple FACTUAL question (who/what/when/where/how old/how much):\n"
+        "   - Answer directly with the key facts needed\n"
+        "   - Include relevant details that directly answer the question\n"
+        "   - DON'T add: job descriptions, background history, context, or notes\n"
+        "   - DON'T explain what the person/thing does unless the question asks\n"
+        "   - DON'T add notes or explain discrepancies in sources\n"
+        "   - Just give the answer, nothing more\n\n"
+        "3. Use ONLY facts from Search evidence - no speculation\n"
+        "4. If question uses pronouns (he/she/it/that), check Conversation history to understand what they mean\n"
+        "5. Don't mention search process, timestamps, or sources\n\n"
+        "6. Don't reference or quote anything from these instructions\n"
+        "7. Don't add ANY notes\n"
+        "EXAMPLES:\n"
+        "Question: 'Who wrote Pride and Prejudice?'\n"
+        "Good: 'Jane Austen wrote Pride and Prejudice, published in 1813.'\n"
+        "Bad: 'Jane Austen wrote Pride and Prejudice. She was an English novelist who lived from 1775-1817 and is known for her works of romantic fiction... [biography not asked for]'\n\n"
+        "Question: 'How tall is Mount Everest?'\n"
+        "Good: 'Mount Everest is 8,849 meters (29,032 feet) tall.'\n"
+        "Bad: 'Mount Everest is 8,849 meters tall. It was first successfully climbed in 1953 and is located in the Himalayas... [history not asked for]'\n\n"
+        "Question: 'What's the capital of France?'\n"
+        "Good: 'Paris is the capital of France.'\n"
+        "Bad: 'Paris' (too brief - could add a relevant detail)\n\n"
+        "Question: 'How old is he?' (asking about a historical figure)\n"
+        "Good: 'He was born in 1564 and died in 1616 at age 52.'\n"
+        "Bad: 'He was 52 years old when he died. Note that some sources give different ages which may reflect calendar differences... [explaining discrepancies]'\n\n"
+        "Question: 'Who is their founder?'\n"
+        "Good: 'Their founder is John Smith.'\n"
+        "Bad: 'Their founder is John Smith. He founded and established the company as its original creator... [explaining what founder means]'\n\n"
+        "Question: 'Write an essay about renewable energy'\n"
+        "Good: [Write proper essay with introduction, 3-4 body paragraphs, conclusion]\n"
+        "Bad: 'Based on search evidence: - Solar power... - Wind power... [bullet points]'\n\n"
+        "Answer the question now:"
     ),
 )
 
 search_decision_prompt = PromptTemplate(
     input_variables=[
-        "current_datetime",
-        "current_year",
-        "current_month",
-        "current_day",
         "conversation_history",
         "user_question",
         "known_answers",
     ],
     template=(
-        "ROLE: Search gatekeeper. Output exactly one token: SEARCH or NO_SEARCH.\n"
-        "RULE OF THUMB: Default to SEARCH unless the request is a fully self-contained logical task.\n\n"
-        "CHOOSE SEARCH WHEN:\n"
-        "- The user needs real-world facts, dates, prices, people, events, policies, comparisons, book/movie/game summaries, or anything knowledge-based.\n"
-        "- The request is to write essays, reports, or explanations about existing works/world knowledge unless the complete source text is fully provided.\n"
-        "- The question mixes reasoning with unknown factual data, or the intent is ambiguous.\n"
-        "- You lack enough information to solve the request from the given text alone (even for math/coding) and would need outside context.\n"
-        "- The user explicitly asks you to look things up.\n\n"
-        "CHOOSE NO_SEARCH ONLY WHEN:\n"
-        "- The task is purely logical/deterministic: coding, math, proofs, algorithm design, regex, rewriting supplied text, summarizing provided content, or similar.\n"
-        "- Every required input (including any reference text to summarize) is already in the prompt, and you can finish confidently without external facts.\n"
-        "- If a logical problem references unknown real-world data, or if you must rely on outside knowledge of books/events/people, you must output SEARCH.\n\n"
+        "OUTPUT FORMAT: Return exactly one word: SEARCH or NO_SEARCH\n\n"
         "EXAMPLES:\n"
-        "- 'Implement quicksort in Python' → NO_SEARCH\n"
-        "- 'Solve this integral' → NO_SEARCH\n"
-        "- 'What year did Voyagers launch?' → SEARCH\n"
-        "- 'Compare current RTX 4090 prices' → SEARCH\n"
-        "- 'Write a script that prints the unemployment rate today' → SEARCH (needs data).\n\n"
+        "Question: 'What year was the Great Wall of China built?' → SEARCH (needs facts)\n"
+        "Question: 'Who wrote Romeo and Juliet?' → SEARCH (needs facts)\n"
+        "Context: Just asked about an author / Question: 'When did he die?' → SEARCH (needs author's death date)\n"
+        "Context: Just asked about a product / Question: 'How much do they cost?' → SEARCH (needs product price)\n"
+        "Question: 'How much do bananas cost?' → SEARCH (needs current prices)\n"
+        "Context: Just asked about bananas / Question: 'Where can I buy them?' → SEARCH (needs store info)\n"
+        "Question: 'Implement quicksort in Python' → NO_SEARCH (pure coding)\n"
+        "Question: 'Solve x^2 + 5x + 6 = 0' → NO_SEARCH (pure math)\n"
+        "Question: 'What's 15% of 80?' → NO_SEARCH (pure calculation)\n\n"
+        "User question:\n{user_question}\n\n"
         "Conversation context:\n{conversation_history}\n\n"
         "Known answers:\n{known_answers}\n\n"
-        "User question:\n{user_question}\n\n"
-        "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day})."
+        "DECISION CHECKLIST:\n"
+        "□ Does the question need real-world facts not in Known answers? → SEARCH\n"
+        "□ Does it ask about someone/something using pronouns (he/she/it/they/them/their/his/her)? Check Conversation context to see what they mean, then → SEARCH for that info\n"
+        "□ Does it need current prices, dates, statistics, or news? → SEARCH\n"
+        "□ Is it purely math, coding, logic, or text rewriting? → NO_SEARCH\n"
+        "□ Is ALL needed information already in Known answers above? → NO_SEARCH\n\n"
+        "IMPORTANT: Pronouns (he/she/it/they/them/their) always need SEARCH for actual facts.\n"
+        "Example: 'How old is he?' → SEARCH (need person's age)\n"
+        "Example: 'How much do their shares cost?' → SEARCH (need share price)\n\n"
+        "When in doubt, choose SEARCH.\n\n"
+        "OUTPUT: One word only."
     ),
 )
 
 planning_prompt = PromptTemplate(
     input_variables=[
-        "current_datetime",
         "current_year",
-        "current_month",
-        "current_day",
         "conversation_history",
         "user_question",
         "results_to_date",
@@ -164,80 +162,96 @@ planning_prompt = PromptTemplate(
         "known_answers",
     ],
     template=(
-        "ROLE: Search-query planner.\n"
-        "MODEL NOTES: Produce up to {suggestion_limit} new queries that could surface *additional* information for the user.\n\n"
-        "Context:\n{conversation_history}\n\n"
-        "Known answers:\n{known_answers}\n\n"
+        "OUTPUT FORMAT: Return up to {suggestion_limit} search queries. One per line. No bullets.\n\n"
+        "EXAMPLES OF QUERY VARIATIONS:\n"
+        "Original: 'best budget laptops'\n"
+        "Variations:\n"
+        "- budget laptop reviews 2025\n"
+        "- laptops under 500 dollars student\n"
+        "- cheap laptop reliability comparison\n\n"
+        "Original: 'climate change effects'\n"
+        "Variations:\n"
+        "- climate change impact on agriculture\n"
+        "- global warming temperature rise statistics\n"
+        "- climate change solutions renewable energy\n\n"
         "User question:\n{user_question}\n\n"
-        "Accepted results so far:\n{results_to_date}\n\n"
-        "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
-        "RULES:\n"
-        "- Output only raw search queries, one per line, no bullets or commentary (so {suggestion_limit} lines max).\n"
-        "- Each query must target a different angle, detail, timeframe, or entity than existing results.\n"
-        "- Favor specific disambiguating terms (who, metric, location, date) over vague wording.\n"
-        "- Skip queries already answered well by known answers/results.\n"
-        "- Stop early if you run out of useful ideas; if no query is justified, output nothing."
+        "Conversation context:\n{conversation_history}\n\n"
+        "Known answers:\n{known_answers}\n\n"
+        "Results found so far:\n{results_to_date}\n\n"
+        "YOUR TASK:\n"
+        "Create {suggestion_limit} NEW search queries that find different information.\n\n"
+        "STRATEGY - Try different:\n"
+        "1. Subtopics (if asking about phones, try camera, battery, price separately)\n"
+        "2. Timeframes (add year, or try historical data)\n"
+        "3. Perspectives (reviews vs specs vs comparisons)\n"
+        "4. Specificity (brand names, model numbers, locations)\n\n"
+        "5. Add current year ({current_year}) if question asks about 'current' or 'latest'\n"
+        "Don't repeat what's already in Results found so far.\n"
+        "If you can't think of {suggestion_limit} good queries, output fewer.\n"
+        "If nothing new to search, output nothing.\n\n"
+        "OUTPUT: Queries only, one per line."
     ),
 )
 
 seed_prompt = PromptTemplate(
     input_variables=[
-        "current_datetime",
         "current_year",
-        "current_month",
-        "current_day",
         "conversation_history",
         "user_question",
         "known_answers",
     ],
     template=(
-        "ROLE: Seed-query writer.\n"
-        "MODEL NOTES: Produce exactly one crisp web-search query that restates the user request while aiming for information missing from known answers.\n\n"
-        "Context:\n{conversation_history}\n\n"
-        "Known answers:\n{known_answers}\n\n"
+        "OUTPUT FORMAT: Return one search query. No quotes. No extra words.\n\n"
+        "EXAMPLES:\n"
+        "Question: 'What year was Python created?' → python programming language creation year\n"
+        "Question: 'Best budget laptops under $500' → best budget laptops under 500 dollars {current_year}\n"
+        "Question: 'How does photosynthesis work?' → photosynthesis process explanation\n"
+        "Question: 'Laptop comparison for students' → laptop comparison student budget performance\n"
+        "Context: Just asked about an author / Question: 'When did he die?' → author name death date\n"
+        "Context: Just asked about bananas / Question: 'Where can I buy them?' → where to buy bananas\n"
+        "Context: Just asked about a product / Question: 'How much do they cost?' → product name price\n\n"
         "User question:\n{user_question}\n\n"
-        "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
+        "Conversation context:\n{conversation_history}\n\n"
+        "Known answers:\n{known_answers}\n\n"
         "RULES:\n"
-        "- Output only the query text, no quotes or commentary.\n"
-        "- Keep it specific (key subject + needed detail).\n"
-        "- Avoid information already confirmed in known answers."
+        "1. Turn the question into a search query (3-8 words)\n"
+        "2. Include the main topic + specific detail needed\n"
+        "3. If question uses pronouns (he/she/it/they/them), check Conversation context to identify what they refer to, then include that in the query\n"
+        "4. Add current year ({current_year}) if question asks about 'current' or 'latest'\n"
+        "5. Don't search for info already in Known answers\n\n"
+        "OUTPUT: Query text only."
     ),
 )
 
 query_filter_prompt = PromptTemplate(
     input_variables=[
-        "current_datetime",
-        "current_year",
-        "current_month",
-        "current_day",
-        "conversation_history",
         "candidate_query",
         "user_question",
     ],
     template=(
-        "ROLE: Query relevance filter. Output exactly YES or NO.\n"
-        "Bias: Allow potentially useful queries so exploration continues, but block clearly unrelated ones.\n\n"
-        "Conversation summary:\n{conversation_history}\n\n"
+        "OUTPUT FORMAT: Return exactly YES or NO\n\n"
+        "EXAMPLES:\n"
+        "Question: 'Best gaming laptops' / Query: 'gaming laptop performance benchmarks' → YES\n"
+        "Question: 'Best gaming laptops' / Query: 'how to bake bread' → NO\n"
+        "Question: 'Climate change effects' / Query: 'global warming sea level rise' → YES\n"
+        "Question: 'Climate change effects' / Query: 'stock market prices today' → NO\n"
+        "Question: 'Python tutorials' / Query: '' (blank) → NO\n\n"
         "User question:\n{user_question}\n\n"
         "Candidate query:\n{candidate_query}\n\n"
-        "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
-        "Say YES when:\n"
-        "- The query could reasonably expand, update, or contextualize the topic.\n"
-        "- It targets entities, locations, metrics, or timelines tied to the question.\n"
-        "- It explores adjacent subtopics that might yield new facts.\n\n"
-        "Say NO when:\n"
-        "- The query is off-topic, spam-like, or repeats data already exhausted.\n"
-        "- It chases a completely different subject.\n\n"
-        "OUTPUT: return ONLY YES or NO (uppercase). If the candidate query is blank or unusable, output NO rather than leaving the field empty."
+        "IS THIS QUERY RELEVANT?\n"
+        "Check these:\n"
+        "□ Query is about the same topic as the question\n"
+        "□ Query could find useful information to answer the question\n"
+        "□ Query is not blank or gibberish\n\n"
+        "If all 3 are true → YES\n"
+        "If any are false → NO\n\n"
+        "When in doubt, choose YES.\n\n"
+        "OUTPUT: YES or NO only."
     ),
 )
 
 result_filter_prompt = PromptTemplate(
     input_variables=[
-        "current_datetime",
-        "current_year",
-        "current_month",
-        "current_day",
         "user_question",
         "search_query",
         "known_answers",
@@ -245,49 +259,66 @@ result_filter_prompt = PromptTemplate(
         "raw_result",
     ],
     template=(
-        "ROLE: Search-result triage. Output exactly YES or NO.\n"
-        "Goal: Keep anything that might add signal; drop items that clearly add nothing.\n\n"
+        "OUTPUT FORMAT: Return exactly YES or NO\n\n"
+        "EXAMPLES:\n"
+        "Question: 'Gaming laptop price' / Snippet: 'Gaming laptops range from $800-$2000 depending on specs' → YES\n"
+        "Question: 'Gaming laptop price' / Snippet: 'Click here for deals! Subscribe now!' → NO\n"
+        "Question: 'How photosynthesis works' / Snippet: 'Plants convert light to energy via chlorophyll' → YES\n"
+        "Question: 'How photosynthesis works' / Snippet: '' (blank) → NO\n\n"
         "User question:\n{user_question}\n\n"
-        "Search query that produced this result:\n{search_query}\n\n"
-        "Known answers so far:\n{known_answers}\n\n"
+        "Search query:\n{search_query}\n\n"
         "Topic keywords:\n{topic_keywords}\n\n"
-        "Candidate result snippet:\n{raw_result}\n\n"
-        "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
-        "Say YES if:\n"
-        "- The snippet adds facts, examples, metrics, timelines, or clarifications about the topic.\n"
-        "- It reinforces important context or offers a new angle, even if overlapping with prior info.\n"
-        "- It appears credible and on-topic.\n\n"
-        "Say NO if:\n"
-        "- The snippet is off-topic, promotional, spammy, or purely navigation fluff.\n"
-        "- It repeats already-captured facts without adding nuance.\n"
-        "- It contains no usable information or is blank/garbled.\n\n"
-        "OUTPUT: ONLY YES or NO (uppercase). If unsure or the snippet is empty, respond NO instead of leaving the output blank."
+        "Result snippet:\n{raw_result}\n\n"
+        "Known answers:\n{known_answers}\n\n"
+        "IS THIS SNIPPET USEFUL?\n"
+        "Check these:\n"
+        "□ Snippet contains facts, numbers, or explanations about the topic\n"
+        "□ Snippet is not spam, ads, or navigation links\n"
+        "□ Snippet is not blank or gibberish\n"
+        "□ Snippet adds something (can overlap with Known answers if it adds detail)\n\n"
+        "If all 4 are true → YES\n"
+        "If any are false → NO\n\n"
+        "When in doubt, choose YES.\n\n"
+        "OUTPUT: YES or NO only."
     ),
 )
 
 context_mode_prompt = PromptTemplate(
     input_variables=[
-        "current_datetime",
-        "current_year",
-        "current_month",
-        "current_day",
         "recent_conversation",
         "new_question",
     ],
     template=(
-        "ROLE: Topic linkage classifier. Output exactly one label: FOLLOW_UP, EXPAND, or NEW_TOPIC.\n\n"
-        "Recent conversation (summary + latest turns):\n{recent_conversation}\n\n"
+        "OUTPUT FORMAT: Return exactly one word: FOLLOW_UP or EXPAND or NEW_TOPIC\n\n"
+        "Recent conversation:\n{recent_conversation}\n\n"
         "New question:\n{new_question}\n\n"
-        "Current date/time (UTC): {current_datetime} (Year {current_year}, Month {current_month}, Day {current_day}).\n\n"
-        "Definitions:\n"
-        "- FOLLOW_UP: Same topic and intent; user wants clarification or more detail on the previous answer. Short pronoun-heavy prompts like 'How much does it cost?' or 'What about reliability?' count as FOLLOW_UP when the pronouns plausibly reference the summarized entities above.\n"
-        "- EXPAND: Still the same broader topic but shifts angle, scope, or subtopic.\n"
-        "- NEW_TOPIC: Meaningfully different subject from the conversation.\n\n"
-        "Tie-breakers:\n"
-        "- If unsure whether a vague question refers to the prior answer, assume FOLLOW_UP.\n"
-        "- If torn between FOLLOW_UP and EXPAND, choose FOLLOW_UP.\n"
-        "- If torn between EXPAND and NEW_TOPIC, choose EXPAND.\n"
-        "- Only output NEW_TOPIC if the user clearly introduces new entities, goals, or time periods absent from the conversation summary.\n\n"
-        "OUTPUT: Return only the chosen label with no punctuation or commentary."
+        "EXAMPLES:\n"
+        "Conversation: 'Who wrote Romeo and Juliet?' / Answer: 'William Shakespeare...'\n"
+        "Question: 'When did he die?' → FOLLOW_UP (asking more about the same author)\n"
+        "Question: 'Who wrote Hamlet?' → EXPAND (still about authors/playwrights)\n"
+        "Question: 'What is the capital of France?' → NEW_TOPIC (completely different)\n\n"
+        "Conversation: 'How much do bananas cost?' / Answer: '$2-3 per pound...'\n"
+        "Question: 'Where can I buy them?' → FOLLOW_UP (still about bananas)\n"
+        "Question: 'How much do strawberries cost?' → EXPAND (different fruit, same category)\n"
+        "Question: 'How much does bread cost?' → NEW_TOPIC (different food category)\n\n"
+        "Conversation: 'Tell me about solar panels' / Answer: 'They convert sunlight to electricity...'\n"
+        "Question: 'How much do they cost?' → FOLLOW_UP (still about solar panels)\n"
+        "Question: 'What about wind turbines?' → EXPAND (related energy technology)\n"
+        "Question: 'Best water heaters?' → NEW_TOPIC (different appliance category)\n\n"
+        "DECISION RULES:\n"
+        "1. FOLLOW_UP = Asking MORE about the SAME specific thing just discussed\n"
+        "   - Uses pronouns like 'he', 'she', 'it', 'that', 'this', 'they'\n"
+        "   - Asks for additional details about the exact same entity/topic\n\n"
+        "2. EXPAND = Related but DIFFERENT thing in the SAME category\n"
+        "   - Different specific item but same general category\n"
+        "   - Example: From bananas → strawberries (both fruits)\n"
+        "   - Example: From solar panels → wind turbines (both renewable energy)\n\n"
+        "3. NEW_TOPIC = COMPLETELY DIFFERENT category or subject\n"
+        "   - No clear connection to what was just discussed\n"
+        "   - Example: From bananas → bread (different food category)\n"
+        "   - Example: From Shakespeare → capital of France (unrelated)\n\n"
+        "IMPORTANT: If new question has pronouns (he/she/it/that/this/they), always choose FOLLOW_UP.\n"
+        "If asking about a different specific item in same category, choose EXPAND not FOLLOW_UP.\n\n"
+        "OUTPUT: One word only, no punctuation."
     ),
 )
