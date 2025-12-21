@@ -1,14 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, cast
-import importlib
 
-try:
-    _exceptions = importlib.import_module("src.exceptions")
-    _text_utils_mod = importlib.import_module("src.text_utils")
-except ModuleNotFoundError:
-    _exceptions = importlib.import_module("exceptions")
-    _text_utils_mod = importlib.import_module("text_utils")
+from . import exceptions as _exceptions
+from . import text_utils as _text_utils_mod
 
 
 def invoke_chain_safe(

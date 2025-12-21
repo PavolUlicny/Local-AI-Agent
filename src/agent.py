@@ -1,24 +1,45 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, List, Set, TYPE_CHECKING, cast, Callable
-import importlib
 import logging
 import sys
-from typing import TextIO
+from typing import TYPE_CHECKING, Any, Callable, List, Set, TextIO, cast
 
-PromptSession: Any | None
-ANSI: Any | None
-InMemoryHistory: Any | None
+from . import agent_utils as _agent_utils_mod
+from . import chains as _chains
+from . import context as _context_mod
+from . import embedding_client as _embedding_client_mod
+from . import exceptions as _exceptions
+from . import input_handler as _input_handler_mod
+from . import model_utils as _model_utils_mod
+from . import response as _response_mod
+from . import search as _search_mod
+from . import search_client as _search_client_mod
+from . import search_orchestrator as _search_orchestrator_mod
+from . import text_utils as _text_utils_mod
+from . import topic_manager as _topic_manager_mod
+from . import topic_utils as _topic_utils_mod
+from . import topics as _topics_mod
+
 if TYPE_CHECKING:
     from prompt_toolkit import PromptSession as PromptSessionType
-    from src.search_orchestrator import SearchOrchestrator as SearchOrchestratorType
-    from src.topic_utils import Topic as TopicType
-    from src.context import QueryContext as QueryContextType
+    from prompt_toolkit.formatted_text import ANSI as ANSIType
+    from prompt_toolkit.history import InMemoryHistory as InMemoryHistoryType
+
+    from .config import AgentConfig
+    from .context import QueryContext as QueryContextType
+    from .search_orchestrator import SearchOrchestrator as SearchOrchestratorType
+    from .topic_utils import Topic as TopicType
 else:
     PromptSessionType = Any
     SearchOrchestratorType = Any
     TopicType = Any
     QueryContextType = Any
+    ANSIType = Any
+    InMemoryHistoryType = Any
+
+PromptSession: Any | None
+ANSI: Any | None
+InMemoryHistory: Any | None
 
 try:
     from prompt_toolkit import PromptSession as _PromptSession
@@ -33,59 +54,11 @@ else:
     ANSI = _ANSI
     InMemoryHistory = _InMemoryHistory
 
-if TYPE_CHECKING:
-    from src.config import AgentConfig
-
-try:
-    _chains = importlib.import_module("src.chains")
-    _exceptions = importlib.import_module("src.exceptions")
-    _search_client_mod = importlib.import_module("src.search_client")
-    _embedding_client_mod = importlib.import_module("src.embedding_client")
-    _search_orchestrator_mod = importlib.import_module("src.search_orchestrator")
-    _topic_manager_mod = importlib.import_module("src.topic_manager")
-    _text_utils_mod = importlib.import_module("src.text_utils")
-    _topic_utils_mod = importlib.import_module("src.topic_utils")
-    _model_utils_mod = importlib.import_module("src.model_utils")
-except ModuleNotFoundError as exc:  # fallback when imported as top-level module
-    missing_root = getattr(exc, "name", "").split(".")[0]
-    if missing_root != "src":
-        raise
-    _chains = importlib.import_module("chains")
-    _exceptions = importlib.import_module("exceptions")
-    _search_client_mod = importlib.import_module("search_client")
-    _embedding_client_mod = importlib.import_module("embedding_client")
-    _search_orchestrator_mod = importlib.import_module("search_orchestrator")
-    _topic_manager_mod = importlib.import_module("topic_manager")
-    _text_utils_mod = importlib.import_module("text_utils")
-    _topic_utils_mod = importlib.import_module("topic_utils")
-    _model_utils_mod = importlib.import_module("model_utils")
-
-try:
-    _context_mod = importlib.import_module("src.context")
-except ModuleNotFoundError:
-    _context_mod = importlib.import_module("context")
 QueryContext = _context_mod.QueryContext
 build_query_context = _context_mod.build_query_context
-
-try:
-    _agent_utils_mod = importlib.import_module("src.agent_utils")
-except ModuleNotFoundError:
-    _agent_utils_mod = importlib.import_module("agent_utils")
 agent_utils = _agent_utils_mod
-try:
-    _search_mod = importlib.import_module("src.search")
-except ModuleNotFoundError:
-    _search_mod = importlib.import_module("search")
 search = _search_mod
-try:
-    _response_mod = importlib.import_module("src.response")
-except ModuleNotFoundError:
-    _response_mod = importlib.import_module("response")
 response = _response_mod
-try:
-    _topics_mod = importlib.import_module("src.topics")
-except ModuleNotFoundError:
-    _topics_mod = importlib.import_module("topics")
 topics = _topics_mod
 
 
@@ -125,10 +98,6 @@ class Agent:
             "robot_num_predict": cfg.robot_num_predict,
         }
         # Initialize input handler for prompt/session related helpers.
-        try:
-            _input_handler_mod = importlib.import_module("src.input_handler")
-        except ModuleNotFoundError:
-            _input_handler_mod = importlib.import_module("input_handler")
         # Provide a handler instance; prompt session may be created lazily.
         # Use direct attribute access rather than getattr with constant names.
         self.input_handler = _input_handler_mod.InputHandler(self._is_tty, None)
@@ -181,7 +150,7 @@ class Agent:
     def _close_clients(self) -> None:
         client = getattr(self, "search_client", None)
         self._safe_close(client)
-        self.search_client = None
+        self.search_client = None  # type: ignore[assignment]
         embedding_client = getattr(self, "embedding_client", None)
         if embedding_client is not None:
             embedding_client.close()
@@ -355,7 +324,7 @@ class Agent:
         self,
         selected_topic_index: int | None,
         topic_keywords: Set[str],
-        question_keywords: Iterable[str],
+        question_keywords: List[str],
         aggregated_results: List[str],
         user_query: str,
         response_text: str,
@@ -367,16 +336,13 @@ class Agent:
         """
         # Delegate to `src.topics.update_topics` to keep topic-related logic
         # isolated and easier to unit test.
-        # `topic_manager.update_topics` expects a set-like collection for
-        # `question_keywords`; accept any iterable here and convert to a set
-        # for deterministic behavior and to avoid unnecessary type mismatch.
         return cast(
             int | None,
             topics.update_topics(
                 self,
                 selected_topic_index,
                 topic_keywords,
-                set(question_keywords),
+                question_keywords,
                 aggregated_results,
                 user_query,
                 response_text,
