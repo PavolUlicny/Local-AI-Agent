@@ -35,10 +35,12 @@ def test_generate_and_stream_response_wrapper_handles_exception(monkeypatch):
 def test_handle_query_search_decision_model_missing(monkeypatch):
     agent = make_agent()
 
-    def raise_not_found(*args, **kwargs):
-        raise ResponseError("Model not found: Robot")
+    # Simulate search_decision chain raising "model not found" error
+    class SearchDecisionChain:
+        def invoke(self, inputs):
+            raise ResponseError("Model not found: Robot")
 
-    monkeypatch.setattr(agent, "_decide_should_search", raise_not_found)
+    agent.chains["search_decision"] = SearchDecisionChain()
     res = agent.answer_once("question")
     assert res is None
     assert agent._last_error is not None
@@ -91,36 +93,43 @@ class Ctx:
 
 
 def test_decide_should_search_propagates_not_found(monkeypatch):
+    """Test that _decide_should_search propagates 'model not found' errors."""
     cfg = AgentConfig()
     agent = Agent(cfg)
 
-    def invoke_raise(*args, **kwargs):
-        raise ResponseError("Model not found: Robot")
+    # Simulate search_decision chain raising "model not found" error
+    class SearchDecisionChain:
+        def invoke(self, inputs):
+            raise ResponseError("Model not found: Robot")
 
-    monkeypatch.setattr(agent, "_invoke_chain_safe", invoke_raise)
+    agent.chains["search_decision"] = SearchDecisionChain()
+    # Model not found errors should propagate (not be swallowed by agent_utils)
     with pytest.raises(ResponseError):
         agent._decide_should_search(Ctx(), "q", "p")
 
 
-def test_decide_should_search_propagates_context_length(monkeypatch):
+def test_decide_should_search_handles_context_length_with_retry(monkeypatch):
+    """Test that _decide_should_search handles context length errors with retry."""
     cfg = AgentConfig()
     agent = Agent(cfg)
 
-    # first call raises context-length, reduce_context increments count, second chain returns SEARCH
-    called = {"reduced": 0}
+    # Simulate search_decision chain raising context-length error on first call, then succeeding
+    called = {"reduced": 0, "invoke_count": 0}
 
-    def raise_context(*args, **kwargs):
-        raise ResponseError("Context length exceeded")
-
-    class GoodChain:
+    class SearchDecisionChain:
         def invoke(self, inputs):
+            called["invoke_count"] += 1
+            if called["invoke_count"] == 1:
+                raise ResponseError("Context length exceeded")
             return "SEARCH"
 
-    monkeypatch.setattr(agent, "_invoke_chain_safe", raise_context)
+    agent.chains["search_decision"] = SearchDecisionChain()
     monkeypatch.setattr(
         agent, "_reduce_context_and_rebuild", lambda k, label: called.update({"reduced": called.get("reduced", 0) + 1})
     )
-    agent.chains["search_decision"] = GoodChain()
-    # _decide_should_search does not swallow ResponseError; it should propagate
-    with pytest.raises(ResponseError):
-        agent._decide_should_search(Ctx(), "q", "p")
+
+    # Should handle the retry internally and return True
+    result = agent._decide_should_search(Ctx(), "q", "p")
+    assert result is True
+    assert called["reduced"] == 1
+    assert called["invoke_count"] == 2

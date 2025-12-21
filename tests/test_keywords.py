@@ -24,3 +24,26 @@ def test_looks_like_followup_detects_short_pronoun_question() -> None:
 
 def test_looks_like_followup_non_question():
     assert not K.looks_like_followup("Implement quicksort in Python", set())
+
+
+def test_is_relevant_returns_true_when_no_topic_keywords() -> None:
+    """Test is_relevant returns True when topic_keywords is empty."""
+    assert K.is_relevant("any text here", set()) is True
+    assert K.is_relevant("", set()) is True
+
+
+def test_is_relevant_matches_keyword_overlap() -> None:
+    """Test is_relevant detects keyword overlap."""
+    topic_keywords = {"python", "programming", "code"}
+
+    # Should match - has 'python'
+    assert K.is_relevant("Python tutorial for beginners", topic_keywords) is True
+
+    # Should match - has 'programming'
+    assert K.is_relevant("Learn programming concepts", topic_keywords) is True
+
+    # Should not match - no overlap
+    assert K.is_relevant("JavaScript fundamentals", topic_keywords) is False
+
+    # Should not match - stopwords filtered out
+    assert K.is_relevant("the and for", {"the", "and"}) is False

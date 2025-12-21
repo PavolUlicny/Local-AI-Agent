@@ -9,7 +9,6 @@ aggregated text or `None` on fatal errors.
 from __future__ import annotations
 
 from typing import Any, List, Callable
-import importlib
 import logging
 
 try:
@@ -19,20 +18,9 @@ except Exception:
 else:
     ANSI = _ANSI
 
-try:
-    _exceptions = importlib.import_module("src.exceptions")
-except ModuleNotFoundError:
-    _exceptions = importlib.import_module("exceptions")
-
-try:
-    _text_utils_mod = importlib.import_module("src.text_utils")
-except ModuleNotFoundError:
-    _text_utils_mod = importlib.import_module("text_utils")
-
-try:
-    _model_utils_mod = importlib.import_module("src.model_utils")
-except ModuleNotFoundError:
-    _model_utils_mod = importlib.import_module("model_utils")
+from . import exceptions as _exceptions
+from . import text_utils as _text_utils_mod
+from . import model_utils as _model_utils_mod
 
 
 def generate_and_stream_response(

@@ -14,8 +14,10 @@ def test_run_search_rounds_delegates(monkeypatch):
     called = {}
 
     class FakeOrch:
-        def run(self, **kwargs):
-            called.update(kwargs)
+        def run(self, context, should_search, primary_search_query):
+            called["context"] = context
+            called["should_search"] = should_search
+            called["primary_search_query"] = primary_search_query
             return ["res1"], {"kw"}
 
     monkeypatch.setattr(search_mod, "build_search_orchestrator", lambda agent: FakeOrch())
@@ -33,5 +35,8 @@ def test_run_search_rounds_delegates(monkeypatch):
     res, kws = search_mod.run_search_rounds(agent, ctx, "user", True, "seed", None, None, set())
     assert res == ["res1"]
     assert kws == {"kw"}
-    # ensure run received keys
-    assert "should_search" in called or "user_query" in called
+    # Verify run received proper arguments
+    assert called["should_search"] is True
+    assert called["primary_search_query"] == "seed"
+    assert called["context"].user_query == "user"
+    assert called["context"].current_datetime == "d"

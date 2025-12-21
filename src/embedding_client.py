@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
 from typing import List
 
 from langchain_ollama import OllamaEmbeddings
 
-try:
-    _model_utils_mod = importlib.import_module("src.model_utils")
-except ModuleNotFoundError:
-    _model_utils_mod = importlib.import_module("model_utils")
+from . import model_utils as _model_utils_mod
 
 
 class EmbeddingClient:

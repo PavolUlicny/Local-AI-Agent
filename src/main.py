@@ -4,27 +4,35 @@ import argparse
 import sys
 import logging
 
-# Prefer absolute imports when executed as a module: `python -m src.main`.
-# Only fall back to local (script-style) imports when the 'src' package
-# itself is missing. Do NOT mask dependency errors from inside submodules.
-try:
+# Support both module execution (python -m src.main) and script execution
+# When run as a module, use relative imports. When run as a script, use absolute imports.
+if __package__:
+    # Running as module: python -m src.main
+    from .cli import build_arg_parser, configure_logging
+    from .config import AgentConfig
+    from .agent import Agent
+    from .ollama import check_and_start_ollama
+else:
+    # Running as script: python src/main.py
+    # Add parent directory to path to support script execution
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent))
     from src.cli import build_arg_parser, configure_logging
     from src.config import AgentConfig
     from src.agent import Agent
     from src.ollama import check_and_start_ollama
-except ModuleNotFoundError as e:  # fallback only if the 'src' package is missing
-    pkg = getattr(e, "name", "")
-    if pkg and pkg.split(".")[0] == "src":
-        from cli import build_arg_parser, configure_logging  # type: ignore
-        from config import AgentConfig  # type: ignore
-        from agent import Agent  # type: ignore
-        from ollama import check_and_start_ollama  # type: ignore
-    else:
-        # Propagate real dependency errors (e.g., langchain_community not installed)
-        raise
 
 
 def main(args: argparse.Namespace | None = None) -> None:
+    """Entry point for the Local AI Agent application.
+
+    Configures logging, ensures Ollama is available, creates an Agent instance,
+    and either processes a single question or enters interactive mode.
+
+    Args:
+        args: Parsed command-line arguments. If None, parses from sys.argv.
+    """
     if args is None:
         parser = build_arg_parser()
         args = parser.parse_args()

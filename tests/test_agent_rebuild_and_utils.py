@@ -64,18 +64,17 @@ def test_handle_search_decision_context_length_rebuild_and_recovers(monkeypatch)
 
     agent = Agent(AgentConfig())
 
-    # Make _decide_should_search raise context-length response error initially
-    def raise_context(*args, **kwargs):
-        raise ResponseError("Context length exceeded")
+    # Simulate search_decision chain raising context-length error on first call, then succeeding
+    invoke_count = [0]
 
-    monkeypatch.setattr(agent, "_decide_should_search", raise_context)
-
-    # Provide a chain that will return SEARCH when invoked directly after rebuild
-    class GoodChain:
+    class SearchDecisionChain:
         def invoke(self, inputs):
+            invoke_count[0] += 1
+            if invoke_count[0] == 1:
+                raise ResponseError("Context length exceeded")
             return "SEARCH"
 
-    agent.chains["search_decision"] = GoodChain()
+    agent.chains["search_decision"] = SearchDecisionChain()
 
     # Stub reduce/rebuild to avoid invoking real LLMs during test
     monkeypatch.setattr(
@@ -105,11 +104,17 @@ def test_seed_generation_context_length_rebuild_and_recovers(monkeypatch):
     # force classifier to decide search so seed path executes
     monkeypatch.setattr(agent, "_decide_should_search", lambda *a, **k: True)
 
-    # Make _generate_search_seed raise context-length initially
-    def raise_context(*a, **k):
-        raise ResponseError("Context length exceeded")
+    # Simulate seed chain raising context-length error on first call, then succeeding
+    invoke_count = [0]
 
-    monkeypatch.setattr(agent, "_generate_search_seed", raise_context)
+    class SeedChain:
+        def invoke(self, inputs):
+            invoke_count[0] += 1
+            if invoke_count[0] == 1:
+                raise ResponseError("Context length exceeded")
+            return "Some seed\n"
+
+    agent.chains["seed"] = SeedChain()
 
     # Stub reduce/rebuild to avoid invoking real LLMs during test
     monkeypatch.setattr(
@@ -117,13 +122,6 @@ def test_seed_generation_context_length_rebuild_and_recovers(monkeypatch):
         "_reduce_context_and_rebuild",
         lambda key, label: agent.rebuild_counts.__setitem__(key, agent.rebuild_counts.get(key, 0) + 1),
     )
-
-    # Provide a seed chain that would return a usable seed on retry
-    class SeedChain:
-        def invoke(self, inputs):
-            return "Some seed\n"
-
-    agent.chains["seed"] = SeedChain()
 
     # Stub downstream to avoid heavy operations
     monkeypatch.setattr(agent, "_run_search_rounds", lambda *a, **k: ([], set()))

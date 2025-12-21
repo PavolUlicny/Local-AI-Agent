@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from src.agent import Agent
 from src.config import AgentConfig
 from src.exceptions import ResponseError
@@ -33,18 +31,20 @@ def test_search_decision_rebuild_then_retry(monkeypatch):
     # stub query context builder to avoid heavy logic (patch agent-bound reference)
     monkeypatch.setattr("src.agent.build_query_context", lambda self, q: _FakeCtx())
 
-    calls = {"reduced": 0, "run_search": 0}
+    calls = {"reduced": 0, "run_search": 0, "invoke_count": 0}
 
     def reduce(key, label):
         calls["reduced"] += 1
 
-    # Simulate _decide_should_search raising a context-length ResponseError
-    def decide_raise(ctx, q, p):
-        raise ResponseError("Context length exceeded")
+    # Simulate search_decision chain raising context-length error on first call, then succeeding
+    class SearchDecisionChain:
+        def invoke(self, inputs):
+            calls["invoke_count"] += 1
+            if calls["invoke_count"] == 1:
+                raise ResponseError("Context length exceeded")
+            return "SEARCH"
 
-    agent._decide_should_search = decide_raise
-    # the direct chain invoked during retry should return SEARCH
-    agent.chains["search_decision"] = SimpleNamespace(invoke=lambda inputs: "SEARCH")
+    agent.chains["search_decision"] = SearchDecisionChain()
     monkeypatch.setattr(agent, "_reduce_context_and_rebuild", reduce)
 
     # patch out downstream work: generate_search_seed, run_search_rounds, build_resp, response
@@ -75,11 +75,13 @@ def test_search_decision_rebuild_cap_defaults_to_no_search(monkeypatch):
     # set rebuild count at cap so it shouldn't attempt to rebuild
     agent.rebuild_counts["search_decision"] = T.MAX_REBUILD_RETRIES
 
-    # Simulate _decide_should_search raising a context-length ResponseError
-    def decide_raise2(ctx, q, p):
-        raise ResponseError("Context length exceeded")
+    # Simulate search_decision chain always raising context-length error
+    # When rebuild count is at cap, agent_utils.decide_should_search returns fallback "NO_SEARCH"
+    class SearchDecisionChain:
+        def invoke(self, inputs):
+            raise ResponseError("Context length exceeded")
 
-    agent._decide_should_search = decide_raise2
+    agent.chains["search_decision"] = SearchDecisionChain()
 
     # ensure _run_search_rounds is not called
     def bad_run(*a, **k):
@@ -99,19 +101,17 @@ def test_seed_generation_retries_and_fallback(monkeypatch):
 
     monkeypatch.setattr("src.agent.build_query_context", lambda self, q: _FakeCtx())
 
-    # make _generate_search_seed raise, then have chains['seed'].invoke return a seed text
-    def raise_seed(ctx, q, p):
-        raise ResponseError("Context length exceeded")
-
-    agent._generate_search_seed = raise_seed
+    # Simulate seed chain raising context-length error on first call, then returning a seed
+    calls = {"reduced": 0, "run_search": None, "invoke_count": 0}
 
     class SeedChain:
         def invoke(self, inputs):
+            calls["invoke_count"] += 1
+            if calls["invoke_count"] == 1:
+                raise ResponseError("Context length exceeded")
             return "SEED: found candidate"
 
     agent.chains["seed"] = SeedChain()
-
-    calls = {"reduced": 0, "run_search": None}
 
     monkeypatch.setattr(
         agent, "_reduce_context_and_rebuild", lambda k, label: calls.update({"reduced": calls.get("reduced", 0) + 1})
@@ -139,8 +139,15 @@ def test_seed_generation_rebuild_cap_uses_original_query(monkeypatch):
 
     # Prevent reset and set seed rebuild at cap
     monkeypatch.setattr(agent, "_reset_rebuild_counts", lambda: None)
-    agent._generate_search_seed = lambda ctx, q, p: (_ for _ in ()).throw(ResponseError("Context length exceeded"))
     agent.rebuild_counts["seed"] = T.MAX_REBUILD_RETRIES
+
+    # Simulate seed chain always raising context-length error
+    # When rebuild count is at cap, agent_utils.generate_search_seed returns user_query as fallback
+    class SeedChain:
+        def invoke(self, inputs):
+            raise ResponseError("Context length exceeded")
+
+    agent.chains["seed"] = SeedChain()
 
     # ensure run_search receives original query
     called = {}

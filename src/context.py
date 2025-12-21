@@ -3,25 +3,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Set, Any
 from datetime import datetime, timezone
-import importlib
 import logging
 
-try:
-    _text_utils_mod = importlib.import_module("src.text_utils")
-    _topic_utils_mod = importlib.import_module("src.topic_utils")
-    _keywords_mod = importlib.import_module("src.keywords")
-    _exceptions = importlib.import_module("src.exceptions")
-    _model_utils_mod = importlib.import_module("src.model_utils")
-except ModuleNotFoundError:
-    _text_utils_mod = importlib.import_module("text_utils")
-    _topic_utils_mod = importlib.import_module("topic_utils")
-    _keywords_mod = importlib.import_module("keywords")
-    _exceptions = importlib.import_module("exceptions")
-    _model_utils_mod = importlib.import_module("model_utils")
+from . import text_utils as _text_utils_mod
+from . import topic_utils as _topic_utils_mod
+from . import keywords as _keywords_mod
+from . import exceptions as _exceptions
+from . import model_utils as _model_utils_mod
 
 
 @dataclass(frozen=True)
 class QueryContext:
+    """Immutable context snapshot for processing a single user query.
+
+    Contains all information needed for query processing: datetime, user input,
+    conversation history, topic keywords, and selected topic context. Built once
+    per query and passed through the processing pipeline.
+    """
+
     current_datetime: str
     current_year: str
     current_month: str
@@ -49,14 +48,14 @@ def build_query_context(agent: Any, user_query: str) -> QueryContext:
     current_year = str(dt_obj.year)
     current_month = f"{dt_obj.month:02d}"
     current_day = f"{dt_obj.day:02d}"
-    question_keywords = _keywords_mod.extract_keywords(user_query)
+    question_keywords = list(_keywords_mod.extract_keywords(user_query))
     question_embedding = agent.embedding_client.embed(user_query)
     try:
         selected_topic_index, recent_history, topic_keywords = _topic_utils_mod.select_topic(
             agent.chains["context"],
             agent.topics,
             user_query,
-            question_keywords,
+            set(question_keywords),
             cfg.max_context_turns,
             current_datetime,
             current_year,

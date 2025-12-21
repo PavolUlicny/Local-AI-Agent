@@ -13,6 +13,11 @@ from ddgs.exceptions import DDGSException, TimeoutException
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.config import AgentConfig
 
+# Retry behavior constants
+RETRY_JITTER_MAX = 0.2  # Maximum random jitter to add to retry delay (seconds)
+RETRY_BACKOFF_MULTIPLIER = 1.75  # Exponential backoff multiplier for retry delays
+RETRY_MAX_DELAY = 3.0  # Maximum delay between retries (seconds)
+
 
 class SearchClient:
     """Wrap DDGS calls with retry/backoff and result normalization."""
@@ -88,8 +93,9 @@ class SearchClient:
             if attempt < self.cfg.search_retries:
                 if reason is not None and self._notify_retry is not None:
                     self._notify_retry(attempt, self.cfg.search_retries, delay, reason)
-                time.sleep(delay + (random.random() * 0.2))
-                delay = min(delay * 1.75, 3.0)
+                jitter = random.random() * RETRY_JITTER_MAX
+                time.sleep(delay + jitter)
+                delay = min(delay * RETRY_BACKOFF_MULTIPLIER, RETRY_MAX_DELAY)
         logging.warning("Search failed after %s attempts for '%s'.", self.cfg.search_retries, query)
         return []
 
