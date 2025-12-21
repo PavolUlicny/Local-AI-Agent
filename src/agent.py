@@ -22,8 +22,6 @@ from . import topics as _topics_mod
 
 if TYPE_CHECKING:
     from prompt_toolkit import PromptSession as PromptSessionType
-    from prompt_toolkit.formatted_text import ANSI as ANSIType
-    from prompt_toolkit.history import InMemoryHistory as InMemoryHistoryType
 
     from .config import AgentConfig
     from .context import QueryContext as QueryContextType
@@ -34,8 +32,6 @@ else:
     SearchOrchestratorType = Any
     TopicType = Any
     QueryContextType = Any
-    ANSIType = Any
-    InMemoryHistoryType = Any
 
 PromptSession: Any | None
 ANSI: Any | None
