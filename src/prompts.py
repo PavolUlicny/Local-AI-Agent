@@ -172,12 +172,14 @@ response_prompt = PromptTemplate(
 
 search_decision_prompt = PromptTemplate(
     input_variables=[
+        "current_year",
         "conversation_history",
         "user_question",
         "known_answers",
     ],
     template=(
         "OUTPUT FORMAT: Return exactly one word: SEARCH or NO_SEARCH\n\n"
+        "CURRENT YEAR: {current_year}\n\n"
         "EXAMPLES:\n"
         "Question: 'What year was a historical structure built?' → SEARCH (needs facts)\n"
         "Question: 'Who wrote a famous play?' → SEARCH (needs facts)\n"
