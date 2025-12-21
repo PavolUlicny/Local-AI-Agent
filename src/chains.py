@@ -29,6 +29,7 @@ def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
         repeat_penalty=cfg.robot_repeat_penalty,
         num_predict=robot_predict,
         num_ctx=robot_ctx,
+        keep_alive="5m",
     )
     llm_assistant = OllamaLLM(
         model=assistant_model_name,
@@ -38,6 +39,7 @@ def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
         repeat_penalty=cfg.assistant_repeat_penalty,
         num_predict=assistant_predict,
         num_ctx=assistant_ctx,
+        keep_alive="0",
     )
     return llm_robot, llm_assistant
 
