@@ -1,20 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, TYPE_CHECKING
 from langchain_core.output_parsers import StrOutputParser
-
-import importlib
-
-try:  # local or package import flexibility
-    _prompts = importlib.import_module("src.prompts")
-except Exception:  # pragma: no cover - fallback
-    _prompts = importlib.import_module("prompts")
-
 from langchain_ollama import OllamaLLM
-from typing import TYPE_CHECKING
+
+from . import prompts as _prompts
 
 if TYPE_CHECKING:  # only needed for type hints
-    from src import config as _config
+    from . import config as _config
 
     AgentConfig = _config.AgentConfig
 

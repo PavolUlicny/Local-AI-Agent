@@ -5,19 +5,11 @@ import logging
 import sys
 
 from typing import TYPE_CHECKING, cast
-import importlib
 
-# Runtime import of the project's `config` module (fallback to script-style import).
-try:
-    _config = importlib.import_module("src.config")
-except ModuleNotFoundError as exc:  # pragma: no cover - fallback for script-style runs
-    missing_root = getattr(exc, "name", "").split(".")[0]
-    if missing_root != "src":
-        raise
-    _config = importlib.import_module("config")
+from . import config as _config
 
 if TYPE_CHECKING:  # make the AgentConfig type available to type checkers
-    from src.config import AgentConfig
+    from .config import AgentConfig
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
