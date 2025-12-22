@@ -248,7 +248,7 @@ planning_prompt = PromptTemplate(
         "known_answers",
     ],
     template=(
-        "YOUR JOB: Create alternative search queries to find more information about the user's question. Look at what has already been searched and suggest different angles or approaches.\n\n"
+        "YOUR JOB: Create search queries to find the EXACT information needed to answer the user's question. Focus ONLY on what the question directly asks for - nothing more.\n\n"
         "OUTPUT FORMAT: Return up to {suggestion_limit} search queries. One per line.\n"
         "- NO bullet points (-, *, •)\n"
         "- NO numbering (1., 2., 3.)\n"
@@ -288,13 +288,12 @@ planning_prompt = PromptTemplate(
         "ONLY suggest queries if you genuinely need MORE information to answer the EXACT question.\n"
         "Do NOT suggest queries just because you can - only when NECESSARY to complete the answer.\n\n"
         "When creating queries:\n"
-        "1. Focus on MISSING information gaps - what's needed but not yet found?\n"
-        "2. Try different angles:\n"
-        "   - Subtopics (if asking about products, try features, price, comparisons separately)\n"
-        "   - Perspectives (reviews vs specs vs comparisons)\n"
-        "   - Specificity (brand names, model numbers, locations)\n"
-        "3. ALWAYS add current year ({current_year}) to get latest information\n"
-        "4. Only skip year for historical facts (when something was created, birth/death dates)\n\n"
+        "1. Focus ONLY on MISSING information that directly answers the question\n"
+        "2. Do NOT search for related topics, context, or background information\n"
+        "3. If question asks for price, search ONLY for price - not features or reviews\n"
+        "4. If question asks for weather, search ONLY for weather - not air quality or climate\n"
+        "5. ALWAYS add current year ({current_year}) to get latest information\n"
+        "6. Only skip year for historical facts (when something was created, birth/death dates)\n\n"
         "Don't repeat what's already in Results found so far.\n"
         "Create up to {suggestion_limit} queries, but output fewer if that's all you need.\n"
         "If question is already answerable or nothing new to search, output NONE.\n\n"
