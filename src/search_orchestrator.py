@@ -11,6 +11,7 @@ from src.search_chain_utils import SearchAbort
 from src.search_context import SearchState
 from src.search_processing import process_search_round
 from src.search_planning import generate_query_suggestions, enqueue_validated_queries
+from src.search_parallel import process_queries_parallel, should_use_parallel_search
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.search_context import SearchContext, SearchServices
@@ -70,25 +71,62 @@ class SearchOrchestrator:
         # Main search loop
         while pending_queries and rounds_executed < max_rounds and iteration_count < iteration_guard:
             iteration_count += 1
-            current_query = pending_queries.pop(0)
 
-            # Skip duplicate queries
-            norm_query = normalize_query(current_query)
-            if norm_query in state.seen_query_norms:
-                continue
-            state.seen_query_norms.add(norm_query)
+            # Determine if we should use parallel search
+            # Parallel is beneficial when we have multiple pending queries
+            if should_use_parallel_search(pending_queries, self.services.cfg):
+                # Extract batch of queries to process in parallel
+                batch_size = min(
+                    self.services.cfg.max_concurrent_queries,
+                    len(pending_queries),
+                    max_rounds - rounds_executed,  # Don't exceed remaining rounds
+                )
+                batch_queries = []
 
-            # Execute search round
-            round_results = process_search_round(
-                current_query=current_query,
-                context=context,
-                state=state,
-                services=self.services,
-            )
+                # Pop queries for parallel execution
+                # Note: queries in pending_queries are already deduplicated by enqueue_validated_queries
+                while len(batch_queries) < batch_size and pending_queries:
+                    query = pending_queries.pop(0)
+                    batch_queries.append(query)
 
-            # Collect results
-            aggregated_results.extend(round_results)
-            rounds_executed += 1
+                if not batch_queries:
+                    continue
+
+                logging.info(f"Executing {len(batch_queries)} queries in parallel")
+
+                # Execute batch in parallel
+                round_results = process_queries_parallel(
+                    queries=batch_queries,
+                    context=context,
+                    state=state,
+                    services=self.services,
+                )
+
+                # Collect results and count as one round per query
+                aggregated_results.extend(round_results)
+                rounds_executed += len(batch_queries)
+
+            else:
+                # Sequential execution (original behavior)
+                current_query = pending_queries.pop(0)
+
+                # Skip duplicate queries
+                norm_query = normalize_query(current_query)
+                if norm_query in state.seen_query_norms:
+                    continue
+                state.seen_query_norms.add(norm_query)
+
+                # Execute search round
+                round_results = process_search_round(
+                    current_query=current_query,
+                    context=context,
+                    state=state,
+                    services=self.services,
+                )
+
+                # Collect results
+                aggregated_results.extend(round_results)
+                rounds_executed += 1
 
             # Generate follow-up query suggestions if needed
             if rounds_executed < max_rounds and max_suggestions > 0:
