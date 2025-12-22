@@ -211,3 +211,6 @@ __marimo__/
 
 # Claude settings
 .claude
+
+# .dot files
+*.dot
