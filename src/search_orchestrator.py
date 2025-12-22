@@ -81,7 +81,7 @@ class SearchOrchestrator:
                     len(pending_queries),
                     max_rounds - rounds_executed,  # Don't exceed remaining rounds
                 )
-                batch_queries = []
+                batch_queries: list[str] = []
 
                 # Pop queries for parallel execution
                 # Note: queries in pending_queries are already deduplicated by enqueue_validated_queries

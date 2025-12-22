@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from src.keywords import extract_keywords
 from src.text_utils import truncate_result
@@ -13,6 +13,7 @@ from src.search_validation import check_result_relevance
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.search_context import SearchContext, SearchServices, SearchState
+    from src.search_client_async import AsyncSearchClient
 
 
 class ThreadSafeState:
@@ -129,12 +130,12 @@ def process_search_result(
 
 
 async def process_search_round_async(
-    queries: List[str],
+    queries: list[str],
     context: "SearchContext",
     state: "SearchState",
     services: "SearchServices",
-    async_client: any,  # AsyncSearchClient
-) -> List[str]:
+    async_client: "AsyncSearchClient",
+) -> list[str]:
     """Execute one search round with parallel query execution.
 
     Args:
@@ -156,7 +157,7 @@ async def process_search_round_async(
     # Process results in parallel (each query's results processed sequentially,
     # but different queries processed concurrently)
     safe_state = ThreadSafeState(state)
-    accepted_results: List[str] = []
+    accepted_results: list[str] = []
     relevance_llm_checks = 0
 
     # Process results from each query

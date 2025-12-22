@@ -135,12 +135,12 @@ class AsyncSearchClient:
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Pair queries with their results
-        output = []
+        output: list[tuple[str, list[dict[str, str]]]] = []
         for query, results in zip(queries, results_list):
             if isinstance(results, Exception):
                 logging.error(f"Query '{query}' failed with exception: {results}")
                 output.append((query, []))
-            else:
+            elif isinstance(results, list):
                 output.append((query, results))
 
         return output

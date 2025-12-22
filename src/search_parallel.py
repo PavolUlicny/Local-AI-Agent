@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from src.search_client_async import AsyncSearchClient
 from src.search_processing_async import process_search_round_async
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.search_context import SearchContext, SearchServices, SearchState
+    from src.config import AgentConfig
 
 
 def process_queries_parallel(
-    queries: List[str],
+    queries: list[str],
     context: "SearchContext",
     state: "SearchState",
     services: "SearchServices",
-) -> List[str]:
+) -> list[str]:
     """Execute multiple search queries in parallel (synchronous interface).
 
     This function provides a synchronous interface to async parallel search execution.
@@ -43,9 +44,20 @@ def process_queries_parallel(
     logging.debug(f"Processing {len(queries_to_process)} queries in parallel (max: {max_concurrent})")
 
     # Create async client with same configuration as sync client
+    # Access normalizer from Agent instance via __self__
+    normalizer_fn = getattr(services.ddg_results, "__self__", None)
+    if normalizer_fn and hasattr(normalizer_fn, "_normalize_search_result"):
+        normalizer = normalizer_fn._normalize_search_result
+    else:
+        # Fallback: ddg_results might be a bound method, use identity function
+        def identity_normalizer(x: dict) -> dict[str, str] | None:
+            return None
+
+        normalizer = identity_normalizer
+
     async_client = AsyncSearchClient(
         services.cfg,
-        normalizer=services.ddg_results.__self__._normalize_search_result,  # Access from Agent
+        normalizer=normalizer,
         notify_retry=None,  # Optional retry notification
     )
 
@@ -75,7 +87,7 @@ def process_queries_parallel(
         )
 
 
-def should_use_parallel_search(queries: List[str], cfg: any) -> bool:
+def should_use_parallel_search(queries: list[str], cfg: "AgentConfig") -> bool:
     """Determine if parallel search should be used.
 
     Parallel search is beneficial when:
