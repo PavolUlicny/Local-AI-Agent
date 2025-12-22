@@ -177,38 +177,46 @@ class TestProcessQueriesParallel:
 
                     assert result == expected_results
 
-    @patch("src.search_parallel.asyncio.get_event_loop")
-    def test_handles_existing_event_loop_not_running(self, mock_get_loop):
+    def test_handles_existing_event_loop_not_running(self):
         """Should use existing event loop when it's not running."""
-        mock_loop = Mock()
-        mock_loop.is_running.return_value = False
-        mock_loop.run_until_complete.return_value = ["result"]
-        mock_get_loop.return_value = mock_loop
-
         context = _make_search_context()
         state = SearchState()
         services = _make_search_services()
 
-        result = process_queries_parallel(["q1", "q2"], context, state, services)
+        with patch("src.search_parallel.asyncio.get_event_loop") as mock_get_loop:
+            with patch("src.search_parallel.process_search_round_async") as mock_async:
+                mock_async.return_value = ["result"]
 
-        assert result == ["result"]
-        mock_loop.run_until_complete.assert_called_once()
+                mock_loop = Mock()
+                mock_loop.is_running.return_value = False
+                # Make run_until_complete execute the coroutine synchronously
+                mock_loop.run_until_complete.return_value = ["result"]
+                mock_get_loop.return_value = mock_loop
 
-    @patch("src.search_parallel.asyncio.run")
-    @patch("src.search_parallel.asyncio.get_event_loop")
-    def test_handles_runtime_error_no_event_loop(self, mock_get_loop, mock_async_run):
+                result = process_queries_parallel(["q1", "q2"], context, state, services)
+
+                assert result == ["result"]
+                mock_loop.run_until_complete.assert_called_once()
+
+    def test_handles_runtime_error_no_event_loop(self):
         """Should handle RuntimeError when no event loop exists."""
-        mock_get_loop.side_effect = RuntimeError("No event loop")
-        mock_async_run.return_value = ["result"]
-
         context = _make_search_context()
         state = SearchState()
         services = _make_search_services()
 
-        result = process_queries_parallel(["q1", "q2"], context, state, services)
+        with patch("src.search_parallel.asyncio.get_event_loop") as mock_get_loop:
+            mock_get_loop.side_effect = RuntimeError("No event loop")
 
-        assert result == ["result"]
-        mock_async_run.assert_called_once()
+            with patch("src.search_parallel.process_search_round_async") as mock_async:
+                mock_async.return_value = ["result"]
+
+                with patch("src.search_parallel.asyncio.run") as mock_async_run:
+                    mock_async_run.return_value = ["result"]
+
+                    result = process_queries_parallel(["q1", "q2"], context, state, services)
+
+                    assert result == ["result"]
+                    mock_async_run.assert_called_once()
 
 
 class TestAsyncSearchClientIntegration:
