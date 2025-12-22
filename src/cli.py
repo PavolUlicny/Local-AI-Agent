@@ -168,6 +168,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Per-request timeout (seconds) for DDGS search calls",
     )
     parser.add_argument(
+        "--max-concurrent-queries",
+        "--mcq",
+        type=int,
+        default=defaults.max_concurrent_queries,
+        help="Maximum queries to fetch in parallel per search round (1=sequential, 3=default)",
+    )
+    parser.add_argument(
         "--log-level", "--ll", default=defaults.log_level, help="Logging level: DEBUG, INFO, WARNING, ERROR"
     )
     parser.add_argument("--log-file", "--lf", default=defaults.log_file, help="Optional log file path")
