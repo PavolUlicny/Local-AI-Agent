@@ -31,13 +31,15 @@ PromptTemplate = _resolve_prompt_template()
 response_prompt_no_search = PromptTemplate(
     input_variables=[
         "current_year",
+        "current_month",
+        "current_day",
         "conversation_history",
         "user_question",
         "prior_responses",
     ],
     template=(
         "Answer the user's question using your general knowledge. Be direct and concise.\n\n"
-        "CURRENT YEAR: {current_year}\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "User question:\n{user_question}\n\n"
         "Conversation history:\n{conversation_history}\n\n"
         "Earlier answers:\n{prior_responses}\n\n"
@@ -92,6 +94,8 @@ response_prompt_no_search = PromptTemplate(
 response_prompt = PromptTemplate(
     input_variables=[
         "current_year",
+        "current_month",
+        "current_day",
         "conversation_history",
         "search_results",
         "user_question",
@@ -99,7 +103,7 @@ response_prompt = PromptTemplate(
     ],
     template=(
         "Answer the user's question using the information below.\n\n"
-        "CURRENT YEAR: {current_year}\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "User question:\n{user_question}\n\n"
         "Conversation history:\n{conversation_history}\n\n"
         "Earlier answers:\n{prior_responses}\n\n"
@@ -173,13 +177,16 @@ response_prompt = PromptTemplate(
 search_decision_prompt = PromptTemplate(
     input_variables=[
         "current_year",
+        "current_month",
+        "current_day",
         "conversation_history",
         "user_question",
         "known_answers",
     ],
     template=(
+        "YOUR JOB: Decide if the user's question needs a web search to answer, or if it can be answered without searching.\n\n"
         "OUTPUT FORMAT: Return exactly one word: SEARCH or NO_SEARCH\n\n"
-        "CURRENT YEAR: {current_year}\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'What year was a historical structure built?' → SEARCH (needs facts)\n"
         "Question: 'Who wrote a famous play?' → SEARCH (needs facts)\n"
@@ -210,6 +217,8 @@ search_decision_prompt = PromptTemplate(
 planning_prompt = PromptTemplate(
     input_variables=[
         "current_year",
+        "current_month",
+        "current_day",
         "conversation_history",
         "user_question",
         "results_to_date",
@@ -217,7 +226,9 @@ planning_prompt = PromptTemplate(
         "known_answers",
     ],
     template=(
+        "YOUR JOB: Create alternative search queries to find more information about the user's question. Look at what has already been searched and suggest different angles or approaches.\n\n"
         "OUTPUT FORMAT: Return up to {suggestion_limit} search queries. One per line. No bullets.\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES OF QUERY VARIATIONS:\n"
         "Original: 'best budget products'\n"
         "Variations:\n"
@@ -251,12 +262,16 @@ planning_prompt = PromptTemplate(
 seed_prompt = PromptTemplate(
     input_variables=[
         "current_year",
+        "current_month",
+        "current_day",
         "conversation_history",
         "user_question",
         "known_answers",
     ],
     template=(
+        "YOUR JOB: Convert the user's question into a search query that will find the information they need.\n\n"
         "OUTPUT FORMAT: Return one search query. No quotes. No extra words.\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'What year was a language created?' → programming language creation year\n"
         "Question: 'Best budget products under $X' → best budget products under X dollars {current_year}\n"
@@ -283,11 +298,16 @@ seed_prompt = PromptTemplate(
 
 query_filter_prompt = PromptTemplate(
     input_variables=[
+        "current_year",
+        "current_month",
+        "current_day",
         "candidate_query",
         "user_question",
     ],
     template=(
+        "YOUR JOB: Decide if a search query is relevant to the user's question.\n\n"
         "OUTPUT FORMAT: Return exactly YES or NO\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'Best products for gaming' / Query: 'gaming product performance benchmarks' → YES\n"
         "Question: 'Best products for gaming' / Query: 'how to cook food' → NO\n"
@@ -310,6 +330,9 @@ query_filter_prompt = PromptTemplate(
 
 result_filter_prompt = PromptTemplate(
     input_variables=[
+        "current_year",
+        "current_month",
+        "current_day",
         "user_question",
         "search_query",
         "known_answers",
@@ -317,7 +340,9 @@ result_filter_prompt = PromptTemplate(
         "raw_result",
     ],
     template=(
+        "YOUR JOB: Decide if a search result snippet contains useful information to answer the user's question.\n\n"
         "OUTPUT FORMAT: Return exactly YES or NO\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'Product price' / Snippet: 'Products range from $X-$Y depending on features' → YES\n"
         "Question: 'Product price' / Snippet: 'Click here for deals! Subscribe now!' → NO\n"
@@ -343,11 +368,16 @@ result_filter_prompt = PromptTemplate(
 
 context_mode_prompt = PromptTemplate(
     input_variables=[
+        "current_year",
+        "current_month",
+        "current_day",
         "recent_conversation",
         "new_question",
     ],
     template=(
+        "YOUR JOB: Determine the relationship between the new question and the recent conversation. Is it asking more about the same thing (FOLLOW_UP), a related topic (EXPAND), or something completely different (NEW_TOPIC)?\n\n"
         "OUTPUT FORMAT: Return exactly one word: FOLLOW_UP or EXPAND or NEW_TOPIC\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "Recent conversation:\n{recent_conversation}\n\n"
         "New question:\n{new_question}\n\n"
         "EXAMPLES:\n"
