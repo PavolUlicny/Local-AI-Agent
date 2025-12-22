@@ -141,6 +141,13 @@ def test_seed_generation_rebuild_cap_uses_original_query(monkeypatch):
     monkeypatch.setattr(agent, "_reset_rebuild_counts", lambda: None)
     agent.rebuild_counts["seed"] = T.MAX_REBUILD_RETRIES
 
+    # Mock question_expansion to return original query
+    class QuestionExpansionChain:
+        def invoke(self, inputs):
+            return inputs.get("user_question", "orig")
+
+    agent.chains["question_expansion"] = QuestionExpansionChain()
+
     # Simulate seed chain always raising context-length error
     # When rebuild count is at cap, agent_utils.generate_search_seed returns user_query as fallback
     class SeedChain:

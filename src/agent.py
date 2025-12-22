@@ -87,6 +87,7 @@ class Agent:
             char_budget=self._char_budget,
         )
         self.rebuild_counts = {
+            "question_expansion": 0,
             "search_decision": 0,
             "seed": 0,
             "relevance": 0,
@@ -234,6 +235,43 @@ class Agent:
     def _invoke_chain_safe(self, chain_name: str, inputs: dict[str, Any], rebuild_key: str | None = None) -> Any:
         """Delegate to `src.agent_utils.invoke_chain_safe` for centralized handling."""
         return agent_utils.invoke_chain_safe(self, chain_name, inputs, rebuild_key)
+
+    def _expand_question(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> str:
+        """Expand user question to resolve pronouns and references from conversation history.
+
+        Returns the expanded question, or the original if expansion fails.
+        """
+        inputs = {
+            "user_question": user_query,
+            "conversation_history": ctx.conversation_text,
+            "known_answers": prior_responses_text,
+            "current_year": ctx.current_year,
+            "current_month": ctx.current_month,
+            "current_day": ctx.current_day,
+        }
+
+        try:
+            expanded = agent_utils.invoke_chain_safe(
+                self,
+                "question_expansion",
+                inputs,
+                rebuild_key="question_expansion",
+                fallback_on_context_error=user_query,
+                fallback_on_generic_error=user_query,
+            )
+
+            if expanded:
+                expanded_clean = str(expanded).strip()
+                if expanded_clean:
+                    logging.debug(f"Question expanded: '{user_query}' → '{expanded_clean}'")
+                    return expanded_clean
+
+            logging.debug(f"Question expansion failed or empty, using original: '{user_query}'")
+            return user_query
+
+        except Exception as exc:
+            logging.warning(f"Question expansion error: {exc}, using original question")
+            return user_query
 
     def _decide_should_search(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> bool:
         """Run the search_decision classifier and return True if SEARCH decided.
@@ -500,11 +538,16 @@ class Agent:
 
         aggregated_results: List[str] = []
 
+        # Phase 1.5: Question Expansion
+        # Expand the question to resolve pronouns/references from conversation
+        # Keep original user_query for final response, use expanded_question for search/logic
+        expanded_question = self._expand_question(ctx, user_query, prior_responses_text)
+
         # Phase 2: Search Decision
         should_search = bool(cfg.force_search)
         if not should_search and cfg.auto_search_decision:
             try:
-                should_search = self._decide_should_search(ctx, user_query, prior_responses_text)
+                should_search = self._decide_should_search(ctx, expanded_question, prior_responses_text)
             except _exceptions.ResponseError as exc:
                 if "not found" in str(exc).lower():
                     _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
@@ -519,7 +562,7 @@ class Agent:
         # Phase 3: Search Seed Generation & Search Orchestration
         if should_search:
             try:
-                primary_search_query = self._generate_search_seed(ctx, user_query, prior_responses_text)
+                primary_search_query = self._generate_search_seed(ctx, expanded_question, prior_responses_text)
             except _exceptions.ResponseError as exc:
                 if "not found" in str(exc).lower():
                     _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
@@ -533,7 +576,7 @@ class Agent:
             try:
                 aggregated_results, topic_keywords = self._run_search_rounds(
                     ctx,
-                    user_query,
+                    expanded_question,
                     should_search,
                     primary_search_query,
                     question_embedding,
