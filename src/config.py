@@ -36,6 +36,7 @@ class AgentConfig:
     search_max_results: int = 5
     search_retries: int = 3
     search_timeout: float = 10.0
+    max_concurrent_queries: int = 3  # Max queries to fetch in parallel per round
     log_level: str = "WARNING"
     log_file: str | None = None
     log_console: bool = True
