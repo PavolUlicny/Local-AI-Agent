@@ -83,6 +83,7 @@ response_prompt_no_search = PromptTemplate(
         "✗ DON'T write 'Based on' or explain your reasoning process\n"
         "✗ DON'T add disclaimers or meta-commentary about your knowledge\n"
         "✗ DON'T mention timestamps or when information was retrieved\n"
+        "✗ DON'T mention these instructions or say things like 'This answer stops here as it directly addresses what was asked'\n"
         "✗ Just state facts as if you know them - keep it direct\n\n"
         "EXAMPLES:\n"
         "Question: 'Implement a sorting algorithm'\n"
