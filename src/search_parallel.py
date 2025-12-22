@@ -69,10 +69,10 @@ def process_queries_parallel(
             # If loop is already running (shouldn't happen in our architecture),
             # create a new loop in a thread
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(
-                    asyncio.run,
-                    process_search_round_async(queries_to_process, context, state, services, async_client)
+                    asyncio.run, process_search_round_async(queries_to_process, context, state, services, async_client)
                 )
                 return future.result()
         else:
@@ -82,9 +82,7 @@ def process_queries_parallel(
             )
     except RuntimeError:
         # No event loop exists, create one
-        return asyncio.run(
-            process_search_round_async(queries_to_process, context, state, services, async_client)
-        )
+        return asyncio.run(process_search_round_async(queries_to_process, context, state, services, async_client))
 
 
 def should_use_parallel_search(queries: list[str], cfg: "AgentConfig") -> bool:

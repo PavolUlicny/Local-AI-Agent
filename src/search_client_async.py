@@ -101,6 +101,7 @@ class AsyncSearchClient:
                     self._notify_retry(attempt, self.cfg.search_retries, delay, reason)
                 jitter = random.random() * RETRY_JITTER_MAX
                 import time
+
                 time.sleep(delay + jitter)
                 delay = min(delay * RETRY_BACKOFF_MULTIPLIER, RETRY_MAX_DELAY)
 
