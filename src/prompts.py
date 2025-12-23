@@ -39,6 +39,7 @@ response_prompt_no_search = PromptTemplate(
     ],
     template=(
         "Answer the user's question using your general knowledge. Be direct and concise.\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "User question:\n{user_question}\n\n"
         "Conversation history:\n{conversation_history}\n\n"
@@ -114,6 +115,7 @@ response_prompt = PromptTemplate(
     ],
     template=(
         "Answer the user's question using the information below.\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "User question:\n{user_question}\n\n"
         "Conversation history:\n{conversation_history}\n\n"
