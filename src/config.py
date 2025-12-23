@@ -47,7 +47,7 @@ class AgentConfig:
     embedding_result_similarity_threshold: float = 0.5
     embedding_query_similarity_threshold: float = 0.3
     robot_model: str = "phi4-mini:3.8b"
-    assistant_model: str = "cogito:8b"
+    assistant_model: str = "llama3.1:8b"
 
     @property
     def auto_search_decision(self) -> bool:
