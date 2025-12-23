@@ -46,7 +46,6 @@ def build_llms(cfg: "AgentConfig") -> Tuple[OllamaLLM, OllamaLLM]:
 
 def build_chains(llm_robot: OllamaLLM, llm_assistant: OllamaLLM) -> Dict[str, Any]:
     return {
-        "question_expansion": _prompts.question_expansion_prompt | llm_robot | StrOutputParser(),
         "context": _prompts.context_mode_prompt | llm_robot | StrOutputParser(),
         "seed": _prompts.seed_prompt | llm_robot | StrOutputParser(),
         "planning": _prompts.planning_prompt | llm_robot | StrOutputParser(),
