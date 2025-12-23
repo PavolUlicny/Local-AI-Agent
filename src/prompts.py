@@ -210,6 +210,7 @@ search_decision_prompt = PromptTemplate(
     template=(
         "YOUR JOB: Decide if the user's question needs a web search to answer, or if it can be answered without searching.\n\n"
         "OUTPUT FORMAT: Return exactly one word: SEARCH or NO_SEARCH\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'What year was a historical structure built?' → SEARCH (needs facts)\n"
@@ -257,6 +258,7 @@ planning_prompt = PromptTemplate(
         "- NO quotes (\" or ')\n"
         "- NO explanations or notes\n"
         "- Just plain search queries, nothing else\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES OF QUERY VARIATIONS:\n"
         "Original: 'best budget products'\n"
@@ -315,6 +317,7 @@ seed_prompt = PromptTemplate(
     template=(
         "YOUR JOB: Convert the user's question into a search query that will find the information they need.\n\n"
         "OUTPUT FORMAT: Return one search query. No quotes. No extra words.\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'What year was a language created?' → programming language creation year\n"
@@ -353,6 +356,7 @@ query_filter_prompt = PromptTemplate(
     template=(
         "YOUR JOB: Decide if a search query is relevant to the user's question.\n\n"
         "OUTPUT FORMAT: Return exactly YES or NO\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'Best products for gaming' / Query: 'gaming product performance benchmarks' → YES\n"
@@ -388,6 +392,7 @@ result_filter_prompt = PromptTemplate(
     template=(
         "YOUR JOB: Decide if a search result snippet contains useful information to answer the user's question.\n\n"
         "OUTPUT FORMAT: Return exactly YES or NO\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "EXAMPLES:\n"
         "Question: 'Product price' / Snippet: 'Products range from $X-$Y depending on features' → YES\n"
@@ -423,6 +428,7 @@ context_mode_prompt = PromptTemplate(
     template=(
         "YOUR JOB: Determine the relationship between the new question and the recent conversation. Is it asking more about the same thing (FOLLOW_UP), a related topic (EXPAND), or something completely different (NEW_TOPIC)?\n\n"
         "OUTPUT FORMAT: Return exactly one word: FOLLOW_UP or EXPAND or NEW_TOPIC\n\n"
+        "The current date below is the true current date.\n\n"
         "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
         "Recent conversation:\n{recent_conversation}\n\n"
         "New question:\n{new_question}\n\n"
