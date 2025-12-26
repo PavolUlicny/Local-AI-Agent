@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
-import logging
 import random
 import time
 from typing import Any, Callable, List, TYPE_CHECKING, cast
 
 from ddgs import DDGS
-from ddgs.exceptions import DDGSException, TimeoutException
+
+from .constants import RETRY_JITTER_MAX, RETRY_BACKOFF_MULTIPLIER, RETRY_MAX_DELAY
+from .search_retry_utils import (
+    handle_search_exception,
+    log_final_failure,
+    safe_close_client,
+    should_notify_retry,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.config import AgentConfig
 
-# Retry behavior constants
-RETRY_JITTER_MAX = 0.2  # Maximum random jitter to add to retry delay (seconds)
-RETRY_BACKOFF_MULTIPLIER = 1.75  # Exponential backoff multiplier for retry delays
-RETRY_MAX_DELAY = 3.0  # Maximum delay between retries (seconds)
-
 
 class SearchClient:
-    """Wrap DDGS calls with retry/backoff and result normalization."""
+    """Wrap DDGS calls with retry/backoff and result normalization.
+
+    Can be used as a context manager to ensure proper cleanup:
+        with SearchClient(cfg, normalizer=...) as client:
+            results = client.fetch("query")
+    """
 
     def __init__(
         self,
@@ -32,19 +38,42 @@ class SearchClient:
         self.cfg = cfg
         self._normalize_result = normalizer
         self._notify_retry = notify_retry
-        self._client: Any = self._new_closed_ddgs(cfg.search_timeout)
+        self._client: Any = None  # Not used by fetch() - only for context manager cleanup
+
+    def __enter__(self) -> "SearchClient":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Context manager exit - cleanup resources."""
+        self.close()
 
     def close(self) -> None:
-        self._safe_close(self._client)
+        safe_close_client(self._client)
         self._client = None
 
     def fetch(self, query: str) -> List[dict[str, str]]:
+        """Fetch search results with retry logic.
+
+        Creates a fresh DDGS client for each attempt to avoid connection reuse issues.
+        Properly cleans up resources even if errors occur during retry.
+
+        Args:
+            query: Search query string
+
+        Returns:
+            List of normalized search results, or empty list on failure
+        """
         delay = 0.5
         for attempt in range(1, self.cfg.search_retries + 1):
             reason: Exception | None = None
-            self._client = DDGS(timeout=cast(int | None, self.cfg.search_timeout))
+            client = None  # Initialize to None for safe cleanup
+
             try:
-                raw_results = self._client.text(
+                # Create fresh client for this attempt
+                client = DDGS(timeout=cast(int | None, self.cfg.search_timeout))
+
+                raw_results = client.text(
                     query,
                     region=self.cfg.ddg_region,
                     safesearch=self.cfg.ddg_safesearch,
@@ -56,68 +85,31 @@ class SearchClient:
                     normalized = self._normalize_result(entry)
                     if normalized:
                         results.append(normalized)
+
+                # Success - return results (cleanup happens in finally)
                 return results
-            except TimeoutException as exc:  # pragma: no cover - network
-                logging.warning(
-                    "Search timeout for '%s' (attempt %s/%s); retrying after %.1fs",
-                    query,
-                    attempt,
-                    self.cfg.search_retries,
-                    delay,
-                )
-                logging.debug("Timeout details: %s", exc)
+
+            except Exception as exc:  # pragma: no cover - network/unexpected errors
+                # Handle all exceptions and determine if should retry
+                should_retry = handle_search_exception(exc, query, attempt, self.cfg.search_retries, delay)
                 reason = exc
-            except DDGSException as exc:  # pragma: no cover - network
-                logging.warning(
-                    "DDGS search error for '%s' (attempt %s/%s): %s; retrying after %.1fs",
-                    query,
-                    attempt,
-                    self.cfg.search_retries,
-                    exc,
-                    delay,
-                )
-                reason = exc
-            except Exception as exc:  # pragma: no cover - network
-                logging.warning(
-                    "Unexpected search error for '%s' (attempt %s/%s): %s; retrying after %.1fs",
-                    query,
-                    attempt,
-                    self.cfg.search_retries,
-                    exc,
-                    delay,
-                )
-                reason = exc
+                if not should_retry:
+                    # Don't retry on unexpected errors - break and let finally clean up
+                    break
             finally:
-                self._safe_close(self._client)
-                self._client = self._new_closed_ddgs(self.cfg.search_timeout)
+                # Always clean up the client for this attempt
+                safe_close_client(client)
+
+            # Retry logic (only reached if exception was caught)
             if attempt < self.cfg.search_retries:
-                if reason is not None and self._notify_retry is not None:
-                    self._notify_retry(attempt, self.cfg.search_retries, delay, reason)
+                if reason is not None:
+                    should_notify_retry(attempt, self.cfg.search_retries, self._notify_retry, delay, reason)
                 jitter = random.random() * RETRY_JITTER_MAX
                 time.sleep(delay + jitter)
                 delay = min(delay * RETRY_BACKOFF_MULTIPLIER, RETRY_MAX_DELAY)
-        logging.warning("Search failed after %s attempts for '%s'.", self.cfg.search_retries, query)
+
+        log_final_failure(query, self.cfg.search_retries)
         return []
-
-    @staticmethod
-    def _safe_close(client: Any) -> None:
-        if client is None:
-            return
-        close_fn = getattr(client, "close", None)
-        if callable(close_fn):
-            try:
-                close_fn()
-            except Exception as exc:
-                logging.debug("Client close failed: %s", exc)
-
-    @classmethod
-    def _new_closed_ddgs(cls, timeout: float | None = None) -> Any:
-        try:
-            client = DDGS(timeout=cast(int | None, timeout))
-            cls._safe_close(client)
-            return client
-        except Exception:
-            return None
 
 
 __all__ = ["SearchClient"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Set, TYPE_CHECKING
 
+from src.constants import ChainName, RebuildKey
 from src.keywords import is_relevant
 from src.text_utils import PATTERN_YES_NO, regex_validate, truncate_text
 from src.search_chain_utils import invoke_chain_with_retry
@@ -67,7 +68,7 @@ def check_result_relevance(
     topic_keywords_text = truncate_text(topic_keywords_text, 1000)
 
     relevance_raw, llm_success = invoke_chain_with_retry(
-        chain=services.chains["result_filter"],
+        chain=services.chains[ChainName.RESULT_FILTER],
         inputs=services.inputs_builder(
             context.current_datetime,
             context.current_year,
@@ -80,7 +81,7 @@ def check_result_relevance(
             known_answers=context.prior_responses_text,
             topic_keywords=topic_keywords_text,
         ),
-        rebuild_key="relevance",
+        rebuild_key=RebuildKey.RELEVANCE,
         rebuild_label="relevance",
         fallback_value="NO",
         raise_on_non_context_error=False,
@@ -136,7 +137,7 @@ def validate_candidate_query(
 
     # Stage 2: LLM filter
     verdict_raw, _llm_success = invoke_chain_with_retry(
-        chain=services.chains["query_filter"],
+        chain=services.chains[ChainName.QUERY_FILTER],
         inputs=services.inputs_builder(
             context.current_datetime,
             context.current_year,
@@ -146,7 +147,7 @@ def validate_candidate_query(
             context.user_query,
             candidate_query=candidate,
         ),
-        rebuild_key="query_filter",
+        rebuild_key=RebuildKey.QUERY_FILTER,
         rebuild_label="query filter",
         fallback_value="SKIP",
         raise_on_non_context_error=False,

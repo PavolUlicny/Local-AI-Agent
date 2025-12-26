@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, List, Set, cast
-import importlib
+from typing import Any, cast
 
-try:
-    _search_orchestrator_mod = importlib.import_module("src.search_orchestrator")
-    _search_context_mod = importlib.import_module("src.search_context")
-except ModuleNotFoundError:
-    _search_orchestrator_mod = importlib.import_module("search_orchestrator")
-    _search_context_mod = importlib.import_module("search_context")
+from . import search_orchestrator as _search_orchestrator_mod
+from . import search_context as _search_context_mod
 
 
 def build_search_orchestrator(agent: Any) -> Any:
@@ -44,41 +39,3 @@ def build_search_orchestrator(agent: Any) -> Any:
         Any,
         _search_orchestrator_mod.SearchOrchestrator(services),
     )
-
-
-def run_search_rounds(
-    agent: Any,
-    ctx: Any,
-    user_query: str,
-    should_search: bool,
-    primary_search_query: str,
-    question_embedding: List[float] | None,
-    topic_embedding_current: List[float] | None,
-    topic_keywords: Set[str],
-) -> tuple[List[str], Set[str]]:
-    """Run search orchestration using a freshly-built SearchOrchestrator.
-
-    Returns the tuple `(aggregated_results, topic_keywords)`.
-    """
-    orchestrator = build_search_orchestrator(agent)
-
-    # Build SearchContext from QueryContext and parameters
-    search_context = _search_context_mod.SearchContext(
-        current_datetime=ctx.current_datetime,
-        current_year=ctx.current_year,
-        current_month=ctx.current_month,
-        current_day=ctx.current_day,
-        user_query=user_query,
-        conversation_text=ctx.conversation_text,
-        prior_responses_text=ctx.prior_responses_text,
-        question_embedding=question_embedding,
-        topic_embedding_current=topic_embedding_current,
-    )
-
-    aggregated_results, updated_keywords = orchestrator.run(
-        context=search_context,
-        should_search=should_search,
-        primary_search_query=primary_search_query,
-    )
-
-    return aggregated_results, updated_keywords

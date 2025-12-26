@@ -5,16 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, TYPE_CHECKING
 
-from src.exceptions import ResponseError
-from src.text_utils import MAX_REBUILD_RETRIES, is_context_length_error
+from src.constants import MAX_REBUILD_RETRIES
+from src.exceptions import ResponseError, SearchAbort
+from src.text_utils import is_context_length_error
 from src.model_utils import handle_missing_model
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.config import AgentConfig
-
-
-class SearchAbort(Exception):
-    """Raised when search orchestration must halt due to a fatal error."""
 
 
 def invoke_chain_with_retry(
@@ -103,4 +100,4 @@ def invoke_chain_with_retry(
         return fallback_value, False
 
 
-__all__ = ["SearchAbort", "invoke_chain_with_retry"]
+__all__ = ["invoke_chain_with_retry"]

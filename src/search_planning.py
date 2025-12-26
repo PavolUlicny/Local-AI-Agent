@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, List, TYPE_CHECKING
 
-from src.text_utils import MAX_SEARCH_RESULTS_CHARS, normalize_query, truncate_text
+from src.constants import ChainName, RebuildKey, MAX_SEARCH_RESULTS_CHARS
+from src.text_utils import normalize_query, truncate_text
 from src.search_chain_utils import invoke_chain_with_retry
 from src.search_validation import validate_candidate_query
 
@@ -36,7 +37,7 @@ def generate_query_suggestions(
     results_to_date = truncate_text(results_to_date, services.char_budget(MAX_SEARCH_RESULTS_CHARS))
 
     suggestions_raw, _llm_success = invoke_chain_with_retry(
-        chain=services.chains["planning"],
+        chain=services.chains[ChainName.PLANNING],
         inputs=services.inputs_builder(
             context.current_datetime,
             context.current_year,
@@ -48,7 +49,7 @@ def generate_query_suggestions(
             suggestion_limit=str(suggestion_limit),
             known_answers=context.prior_responses_text,
         ),
-        rebuild_key="planning",
+        rebuild_key=RebuildKey.PLANNING,
         rebuild_label="query planning" if raise_on_error else "planning",
         fallback_value="NONE",
         raise_on_non_context_error=raise_on_error,
