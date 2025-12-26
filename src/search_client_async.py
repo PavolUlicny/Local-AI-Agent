@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, List, TYPE_CHECKING
 
 from ddgs import DDGS
@@ -17,6 +18,10 @@ if TYPE_CHECKING:  # pragma: no cover - import for type checking only
 RETRY_JITTER_MAX = 0.2  # Maximum random jitter to add to retry delay (seconds)
 RETRY_BACKOFF_MULTIPLIER = 1.75  # Exponential backoff multiplier for retry delays
 RETRY_MAX_DELAY = 3.0  # Maximum delay between retries (seconds)
+
+# Concurrency control constants
+# Thread pool size: slightly higher than max concurrent queries to handle retries
+THREAD_POOL_HEADROOM = 2  # Extra threads beyond max_concurrent_queries
 
 
 class AsyncSearchClient:
@@ -33,13 +38,24 @@ class AsyncSearchClient:
         self._normalize_result = normalizer
         self._notify_retry = notify_retry
 
-    async def fetch(self, query: str) -> List[dict[str, str]]:
-        """Fetch search results asynchronously.
+        # Bounded thread pool for run_in_executor calls
+        # Size adapts to config: max_concurrent_queries + headroom for retries
+        max_workers = cfg.max_concurrent_queries + THREAD_POOL_HEADROOM
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ddgs")
 
-        Since DDGS is synchronous, we run it in a thread pool to avoid blocking.
+        # Semaphore to limit concurrent async operations
+        # Respects config setting to provide appropriate backpressure
+        self._semaphore = asyncio.Semaphore(cfg.max_concurrent_queries)
+
+    async def fetch(self, query: str) -> List[dict[str, str]]:
+        """Fetch search results asynchronously with bounded concurrency.
+
+        Since DDGS is synchronous, we run it in a bounded thread pool.
+        The semaphore ensures we don't overwhelm the thread pool.
         """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_sync, query)
+        async with self._semaphore:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(self._executor, self._fetch_sync, query)
 
     def _fetch_sync(self, query: str) -> List[dict[str, str]]:
         """Synchronous fetch implementation (runs in thread pool)."""
@@ -121,7 +137,10 @@ class AsyncSearchClient:
                 logging.debug("Client close failed: %s", exc)
 
     async def fetch_batch(self, queries: List[str]) -> List[tuple[str, List[dict[str, str]]]]:
-        """Fetch multiple queries in parallel.
+        """Fetch multiple queries in parallel with bounded concurrency.
+
+        The semaphore in fetch() ensures we don't exceed MAX_CONCURRENT_FETCHES
+        concurrent operations, even if many queries are batched together.
 
         Args:
             queries: List of search queries to execute
@@ -130,9 +149,10 @@ class AsyncSearchClient:
             List of (query, results) tuples in same order as input queries
         """
         # Create tasks for all queries
+        # The semaphore in fetch() provides backpressure
         tasks = [self.fetch(query) for query in queries]
 
-        # Execute all tasks concurrently
+        # Execute all tasks concurrently (bounded by semaphore)
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Pair queries with their results
@@ -145,6 +165,22 @@ class AsyncSearchClient:
                 output.append((query, results))
 
         return output
+
+    def shutdown(self) -> None:
+        """Shutdown the thread pool executor.
+
+        Should be called when the client is no longer needed to ensure
+        threads are properly cleaned up.
+        """
+        if hasattr(self, "_executor") and self._executor is not None:
+            self._executor.shutdown(wait=True)
+
+    def __del__(self) -> None:
+        """Cleanup executor on deletion."""
+        try:
+            self.shutdown()
+        except Exception:
+            pass  # Ignore errors during cleanup
 
 
 __all__ = ["AsyncSearchClient"]
