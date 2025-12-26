@@ -41,6 +41,20 @@ def _make_search_context(**overrides):
     return SearchContext(**{**defaults, **overrides})
 
 
+def _make_query_inputs(**overrides):
+    """Create query_inputs dict for tests using new API."""
+    defaults = {
+        "current_datetime": "2025-12-22T10:00:00",
+        "current_year": "2025",
+        "current_month": "12",
+        "current_day": "22",
+        "conversation_history": "",
+        "user_question": "test query",
+        "known_answers": "",
+    }
+    return {**defaults, **overrides}
+
+
 def _make_search_services(cfg=None, **overrides):
     """Create SearchServices for tests."""
     agent = _StubAgent()
@@ -375,7 +389,7 @@ class TestSearchOrchestratorParallelIntegration:
             "query_filter": SimpleNamespace(invoke=lambda inputs: "YES"),
         }
 
-        context = _make_search_context()
+        query_inputs = _make_query_inputs()
         agent = _StubAgent()
         services = _make_search_services(
             cfg=cfg,
@@ -394,7 +408,7 @@ class TestSearchOrchestratorParallelIntegration:
             with patch("src.search_orchestrator.process_search_round") as mock_sequential:
                 mock_sequential.return_value = ["result0"]
 
-                aggregated, kws = orch.run(context, should_search=True, primary_search_query="query1")
+                orch.run(query_inputs=query_inputs, user_query="test query", primary_search_query="query1")
 
                 # Should call sequential once for the first query
                 assert mock_sequential.call_count >= 1
@@ -420,7 +434,7 @@ class TestSearchOrchestratorParallelIntegration:
             "query_filter": SimpleNamespace(invoke=lambda inputs: "YES"),
         }
 
-        context = _make_search_context()
+        query_inputs = _make_query_inputs()
         agent = _StubAgent()
         services = _make_search_services(
             cfg=cfg,
@@ -437,7 +451,7 @@ class TestSearchOrchestratorParallelIntegration:
             with patch("src.search_orchestrator.should_use_parallel_search") as mock_should_use:
                 mock_should_use.return_value = False
 
-                aggregated, kws = orch.run(context, should_search=True, primary_search_query="query1")
+                orch.run(query_inputs=query_inputs, user_query="test query", primary_search_query="query1")
 
                 # should_use_parallel_search should be called but return False
                 assert mock_should_use.called

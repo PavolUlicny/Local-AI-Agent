@@ -24,10 +24,11 @@ def test_reduce_context_and_rebuild_does_not_increase() -> None:
 
 def test_char_budget_behavior() -> None:
     # test mapping tokens->chars behavior for various contexts
-    cfg = AgentConfig(assistant_num_ctx=100, robot_num_ctx=100)
+    cfg = AgentConfig(assistant_num_ctx=512, robot_num_ctx=512)
     agent = Agent(cfg)
-    # With very small ctx_tokens, the budget candidate is small but min is 1024
-    assert agent._char_budget(10000) == min(10000, 1024)
+    # With small ctx_tokens, the budget candidate is small but min is 1024
+    # 512 * 4 * 0.8 = 1638, so budget = min(10000, max(1024, 1638)) = 1638
+    assert agent._char_budget(10000) == 1638
 
     cfg = AgentConfig(assistant_num_ctx=1500, robot_num_ctx=1500)
     agent = Agent(cfg)
@@ -59,76 +60,6 @@ def test_pick_seed_query_more_edge_cases() -> None:
     assert T.pick_seed_query(seed_text, fallback) == "Detailed findings about XYZ"
 
 
-def test_handle_search_decision_context_length_rebuild_and_recovers(monkeypatch):
-    from src.exceptions import ResponseError
-
-    agent = Agent(AgentConfig())
-
-    # Simulate search_decision chain raising context-length error on first call, then succeeding
-    invoke_count = [0]
-
-    class SearchDecisionChain:
-        def invoke(self, inputs):
-            invoke_count[0] += 1
-            if invoke_count[0] == 1:
-                raise ResponseError("Context length exceeded")
-            return "SEARCH"
-
-    agent.chains["search_decision"] = SearchDecisionChain()
-
-    # Stub reduce/rebuild to avoid invoking real LLMs during test
-    monkeypatch.setattr(
-        agent,
-        "_reduce_context_and_rebuild",
-        lambda key, label: agent.rebuild_counts.__setitem__(key, agent.rebuild_counts.get(key, 0) + 1),
-    )
-
-    # Stub downstream behavior to avoid heavy operations
-    monkeypatch.setattr(agent, "_generate_search_seed", lambda *a, **k: "q")
-    monkeypatch.setattr(agent, "_run_search_rounds", lambda *a, **k: ([], set()))
-    monkeypatch.setattr(agent, "_generate_and_stream_response", lambda *a, **k: "answer")
-    monkeypatch.setattr(agent, "_update_topics", lambda *a, **k: None)
-
-    # Ensure rebuild count increments when handling context-length
-    orig = agent.rebuild_counts.get("search_decision", 0)
-    res = agent._handle_query_core("question", one_shot=True)
-    assert res == "answer"
-    assert agent.rebuild_counts["search_decision"] > orig
-
-
-def test_seed_generation_context_length_rebuild_and_recovers(monkeypatch):
-    from src.exceptions import ResponseError
-
-    agent = Agent(AgentConfig())
-
-    # force classifier to decide search so seed path executes
-    monkeypatch.setattr(agent, "_decide_should_search", lambda *a, **k: True)
-
-    # Simulate seed chain raising context-length error on first call, then succeeding
-    invoke_count = [0]
-
-    class SeedChain:
-        def invoke(self, inputs):
-            invoke_count[0] += 1
-            if invoke_count[0] == 1:
-                raise ResponseError("Context length exceeded")
-            return "Some seed\n"
-
-    agent.chains["seed"] = SeedChain()
-
-    # Stub reduce/rebuild to avoid invoking real LLMs during test
-    monkeypatch.setattr(
-        agent,
-        "_reduce_context_and_rebuild",
-        lambda key, label: agent.rebuild_counts.__setitem__(key, agent.rebuild_counts.get(key, 0) + 1),
-    )
-
-    # Stub downstream to avoid heavy operations
-    monkeypatch.setattr(agent, "_run_search_rounds", lambda *a, **k: ([], set()))
-    monkeypatch.setattr(agent, "_generate_and_stream_response", lambda *a, **k: "answer")
-    monkeypatch.setattr(agent, "_update_topics", lambda *a, **k: None)
-
-    orig = agent.rebuild_counts.get("seed", 0)
-    res = agent._handle_query_core("question", one_shot=True)
-    assert res == "answer"
-    assert agent.rebuild_counts["seed"] > orig
+# Tests removed: test_handle_search_decision_context_length_rebuild_and_recovers
+# and test_seed_generation_context_length_rebuild_and_recovers used removed functions:
+# _decide_should_search, _generate_search_seed, _run_search_rounds, _update_topics

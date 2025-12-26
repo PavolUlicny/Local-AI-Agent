@@ -5,14 +5,13 @@ from types import SimpleNamespace
 import pytest
 
 from src.config import AgentConfig
-from src.exceptions import ResponseError
+from src.exceptions import ResponseError, SearchAbort
 from src.search_context import SearchContext, SearchState, SearchServices
 from src.search_planning import (
     generate_query_suggestions,
     enqueue_validated_queries,
     parse_suggestions,
 )
-from src.search_chain_utils import SearchAbort
 
 
 class _StubEmbeddingClient:

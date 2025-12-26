@@ -54,6 +54,58 @@ def test_invoke_chain_safe_context_length_retry(monkeypatch):
     assert agent.rebuild_counts["rk"] == 1
 
 
+def test_invoke_chain_safe_context_error_fallback(caplog):
+    """Test fallback_on_context_error when retries exhausted."""
+    caplog.clear()
+    caplog.set_level(logging.INFO)
+
+    exc = ResponseError("Context length exceeded")
+    agent = SimpleNamespace()
+    agent.chains = {"c": FakeChain([exc])}
+    agent.rebuild_counts = {"rk": 999}  # Already at max retries
+
+    def reduce_context_and_rebuild(key, label):
+        agent.rebuild_counts[key] = agent.rebuild_counts.get(key, 0) + 1
+
+    agent._reduce_context_and_rebuild = reduce_context_and_rebuild
+
+    # Should use fallback value instead of raising
+    res = au_mod.invoke_chain_safe(agent, "c", {}, rebuild_key="rk", fallback_on_context_error="fallback_value")
+    assert res == "fallback_value"
+
+    # Should log about using fallback
+    assert "rebuild cap; using fallback value" in caplog.text
+
+
+def test_invoke_chain_safe_generic_error_fallback():
+    """Test fallback_on_generic_error for non-context ResponseErrors."""
+    exc = ResponseError("Some other error")
+    agent = SimpleNamespace()
+    agent.chains = {"c": FakeChain([exc])}
+    agent.rebuild_counts = {}
+
+    # Should use fallback value instead of raising
+    res = au_mod.invoke_chain_safe(agent, "c", {}, fallback_on_generic_error="generic_fallback")
+    assert res == "generic_fallback"
+
+
+def test_invoke_chain_safe_context_error_raises_when_no_fallback():
+    """Test that context error raises when fallback not provided."""
+    exc = ResponseError("Context length exceeded")
+    agent = SimpleNamespace()
+    agent.chains = {"c": FakeChain([exc])}
+    agent.rebuild_counts = {"rk": 999}  # Already at max retries
+
+    def reduce_context_and_rebuild(key, label):
+        pass
+
+    agent._reduce_context_and_rebuild = reduce_context_and_rebuild
+
+    # Should raise since no fallback provided
+    with pytest.raises(ResponseError):
+        au_mod.invoke_chain_safe(agent, "c", {}, rebuild_key="rk")
+
+
 def test_inputs_and_build_resp_inputs_delegate():
     agent = SimpleNamespace()
     agent.build_inputs = lambda *a, **k: {"x": 1}

@@ -1,5 +1,3 @@
-import pytest
-
 from src.agent import Agent
 from src.config import AgentConfig
 from src.exceptions import ResponseError
@@ -56,7 +54,8 @@ def test_build_search_orchestrator_delegates(monkeypatch):
 def test_restore_llm_params_restores_base_values():
     cfg = AgentConfig()
     agent = Agent(cfg)
-    base = agent._base_llm_params
+    # Access base params through LLMManager
+    base = agent._llm_manager._base_params
     # mutate cfg values to different numbers
     cfg.assistant_num_ctx = base["assistant_num_ctx"] + 10
     cfg.robot_num_ctx = base["robot_num_ctx"] + 20
@@ -90,46 +89,3 @@ class Ctx:
     current_day = "01"
     conversation_text = "conv"
     prior_responses_text = "prior"
-
-
-def test_decide_should_search_propagates_not_found(monkeypatch):
-    """Test that _decide_should_search propagates 'model not found' errors."""
-    cfg = AgentConfig()
-    agent = Agent(cfg)
-
-    # Simulate search_decision chain raising "model not found" error
-    class SearchDecisionChain:
-        def invoke(self, inputs):
-            raise ResponseError("Model not found: Robot")
-
-    agent.chains["search_decision"] = SearchDecisionChain()
-    # Model not found errors should propagate (not be swallowed by agent_utils)
-    with pytest.raises(ResponseError):
-        agent._decide_should_search(Ctx(), "q", "p")
-
-
-def test_decide_should_search_handles_context_length_with_retry(monkeypatch):
-    """Test that _decide_should_search handles context length errors with retry."""
-    cfg = AgentConfig()
-    agent = Agent(cfg)
-
-    # Simulate search_decision chain raising context-length error on first call, then succeeding
-    called = {"reduced": 0, "invoke_count": 0}
-
-    class SearchDecisionChain:
-        def invoke(self, inputs):
-            called["invoke_count"] += 1
-            if called["invoke_count"] == 1:
-                raise ResponseError("Context length exceeded")
-            return "SEARCH"
-
-    agent.chains["search_decision"] = SearchDecisionChain()
-    monkeypatch.setattr(
-        agent, "_reduce_context_and_rebuild", lambda k, label: called.update({"reduced": called.get("reduced", 0) + 1})
-    )
-
-    # Should handle the retry internally and return True
-    result = agent._decide_should_search(Ctx(), "q", "p")
-    assert result is True
-    assert called["reduced"] == 1
-    assert called["invoke_count"] == 2

@@ -13,18 +13,6 @@ def test_pick_seed_query_skips_banned_entries() -> None:
     assert T.pick_seed_query(empty_seed, fallback) == fallback
 
 
-def test_summarize_answer_uses_first_sentences() -> None:
-    text = "Sentence one explains the topic. Sentence two adds nuance. Sentence three is extra."
-    summary = T.summarize_answer(text, max_chars=120)
-    assert "Sentence one" in summary and "Sentence two" in summary
-
-
-def test_context_regex_accepts_spaced_follow_up() -> None:
-    validated = T.regex_validate("follow up", T.PATTERN_CONTEXT, "NEW_TOPIC")
-    assert validated == "FOLLOW UP"
-    assert T.normalize_context_decision(validated) == "FOLLOW_UP"
-
-
 def test_truncate_result_word_boundary_and_punctuation() -> None:
     text = "This is a long sentence that will be cut off. End." * 10
     truncated = T.truncate_result(text, max_chars=50)
@@ -43,10 +31,3 @@ def test_is_context_length_error_indicators() -> None:
     ]
     for p in phrases:
         assert T.is_context_length_error(p)
-
-
-def test_normalize_context_decision_variants() -> None:
-    assert T.normalize_context_decision("follow up") == "FOLLOW_UP"
-    assert T.normalize_context_decision("NEW-TOPIC") == "NEW_TOPIC"
-    assert T.normalize_context_decision("expand") == "EXPAND"
-    assert T.normalize_context_decision("") == "NEW_TOPIC"

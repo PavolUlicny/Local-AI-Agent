@@ -94,22 +94,47 @@ def test_run_handles_exit_and_interrupt(monkeypatch):
     out = StringIO()
     a = Agent(cfg, output_stream=out, is_tty=False)
 
-    # exit path
+    # exit path using /quit command
     class IHExit:
         def read_user_query(self, session):
-            return "exit"
+            return "/quit"
 
     a.input_handler = IHExit()
     a._prompt_session = None
-    a.run()  # should exit cleanly
+    a.run()  # should exit cleanly via command handler
+    assert "Goodbye" in out.getvalue()
 
-    # interrupt path
-    class IHInterrupt:
+    # exit path using backward-compatible 'exit'
+    out2 = StringIO()
+    a2 = Agent(cfg, output_stream=out2, is_tty=False)
+
+    class IHExitOldStyle:
         def read_user_query(self, session):
-            raise KeyboardInterrupt()
+            return "exit"
 
-    a.input_handler = IHInterrupt()
-    a.run()  # should catch and return
+    a2.input_handler = IHExitOldStyle()
+    a2._prompt_session = None
+    a2.run()  # should exit cleanly via backward compatibility
+    assert "Goodbye" in out2.getvalue()
+
+    # interrupt path - should print message and continue loop, then exit on second call
+    out3 = StringIO()
+    a3 = Agent(cfg, output_stream=out3, is_tty=False)
+
+    class IHInterrupt:
+        def __init__(self):
+            self.call_count = 0
+
+        def read_user_query(self, session):
+            self.call_count += 1
+            if self.call_count == 1:
+                raise KeyboardInterrupt()
+            return "/quit"  # exit on second call
+
+    a3.input_handler = IHInterrupt()
+    a3._prompt_session = None
+    a3.run()  # should catch interrupt and continue, then exit
+    assert "Interrupted" in out3.getvalue()
 
 
 def test_ddg_results_constructs_search_client_when_none(monkeypatch):

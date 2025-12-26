@@ -17,19 +17,10 @@ def test_extract_keywords_keeps_accented_english_tokens() -> None:
     assert {"résumé", "accentuate", "naïve", "café", "décor"}.issubset(keywords)
 
 
-def test_looks_like_followup_detects_short_pronoun_question() -> None:
-    assert K.looks_like_followup("how much does it cost?", {"gpu"}) is True
-    assert K.looks_like_followup("explain gpu memory bandwidth", {"gpu"}) is False
-
-
-def test_looks_like_followup_non_question():
-    assert not K.looks_like_followup("Implement quicksort in Python", set())
-
-
-def test_is_relevant_returns_true_when_no_topic_keywords() -> None:
-    """Test is_relevant returns True when topic_keywords is empty."""
-    assert K.is_relevant("any text here", set()) is True
-    assert K.is_relevant("", set()) is True
+def test_is_relevant_returns_false_when_no_topic_keywords() -> None:
+    """Test is_relevant returns False when topic_keywords is empty."""
+    assert K.is_relevant("any text here", set()) is False
+    assert K.is_relevant("", set()) is False
 
 
 def test_is_relevant_matches_keyword_overlap() -> None:

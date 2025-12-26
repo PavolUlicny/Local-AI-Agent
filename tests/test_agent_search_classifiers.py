@@ -20,7 +20,6 @@ def test_search_decision_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
@@ -53,7 +52,6 @@ def test_seed_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": SeedErrorChain(),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),

@@ -20,7 +20,6 @@ def test_answer_once_without_search_uses_response_no_search(
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         chains = {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed query"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
@@ -61,7 +60,6 @@ def test_zero_context_turns_drop_history(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["FOLLOW_UP"]),
             "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
@@ -77,12 +75,15 @@ def test_zero_context_turns_drop_history(monkeypatch: pytest.MonkeyPatch) -> Non
         agent_module._embedding_client_mod.EmbeddingClient, "embed", lambda self, text: [1.0, 0.0], raising=False
     )
 
-    agent = agent_module.Agent(AgentConfig(no_auto_search=True, max_context_turns=0))
+    # Use minimum allowed value (1024) which will still truncate history
+    agent = agent_module.Agent(AgentConfig(no_auto_search=True, max_conversation_chars=1024))
     agent.answer_once("First?")
     agent.answer_once("Second?")
 
-    assert agent.topics, "topic list should not be empty"
-    assert all(not topic.turns for topic in agent.topics)
+    # With very small max_conversation_chars, conversation should keep only recent turns
+    # The _auto_trim ensures at least 1 turn is kept
+    assert len(agent.conversation.turns) >= 1, "conversation should keep at least 1 turn"
+    assert agent.conversation.turns[-1][0] == "Second?", "most recent turn should be preserved"
 
 
 def test_rebuild_counts_reset_each_query(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,7 +94,6 @@ def test_rebuild_counts_reset_each_query(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
@@ -126,7 +126,6 @@ def test_fatal_error_bubbles_via_last_error(monkeypatch: pytest.MonkeyPatch) -> 
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
@@ -155,18 +154,17 @@ def test_force_search_skips_classifier(monkeypatch: pytest.MonkeyPatch) -> None:
         return "robot", "assistant"
 
     search_decision_chain = DummyChain(outputs=["NO_SEARCH"])
-    response_chain = DummyChain(stream_tokens=["forced"])
+    response_no_search_chain = DummyChain(stream_tokens=["forced_no_results"])
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
             "search_decision": search_decision_chain,
-            "response": response_chain,
-            "response_no_search": DummyChain(stream_tokens=[]),
+            "response": DummyChain(stream_tokens=["unused"]),
+            "response_no_search": response_no_search_chain,
         }
 
     monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
@@ -179,7 +177,9 @@ def test_force_search_skips_classifier(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = agent_module.Agent(AgentConfig(force_search=True))
     result = agent.answer_once("Should search")
 
-    assert result == "forced"
+    # With force_search=True, search runs but finds no results, so uses response_no_search
+    assert result == "forced_no_results"
+    # search decision chain should not be invoked when force_search=True
     assert len(search_decision_chain.invocations) == 0
 
 
@@ -194,7 +194,6 @@ def test_stream_error_does_not_persist_state(monkeypatch: pytest.MonkeyPatch) ->
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
@@ -214,4 +213,5 @@ def test_stream_error_does_not_persist_state(monkeypatch: pytest.MonkeyPatch) ->
     result = agent.answer_once("Hello?")
 
     assert result is None
-    assert agent.topics == []
+    # Conversation should be empty since streaming failed
+    assert len(agent.conversation.turns) == 0

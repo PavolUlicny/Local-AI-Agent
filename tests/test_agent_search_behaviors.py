@@ -24,7 +24,6 @@ def test_result_embedding_shortcircuits_relevance_llm(monkeypatch: pytest.Monkey
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed query"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": result_filter_chain,
@@ -71,7 +70,6 @@ def test_query_filter_embedding_skips_low_similarity_candidates(monkeypatch: pyt
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed query"]),
             "planning": planning_chain,
             "result_filter": DummyChain(outputs=["NO"]),
@@ -114,7 +112,6 @@ def test_planning_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch) -> No
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed query"]),
             "planning": PlanningErrorChain(),
             "result_filter": DummyChain(outputs=["NO"]),
@@ -159,18 +156,18 @@ def test_search_loop_guard_prevents_spin(
 
     planning_chain = _IncrementingQueryChain(prefix="plan")
     query_filter_chain = _AlwaysYesChain()
-    response_chain = DummyChain(stream_tokens=["ok"])
+    response_chain = DummyChain(stream_tokens=["unused"])
+    response_no_search_chain = DummyChain(stream_tokens=["ok_no_results"])
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "context": DummyChain(outputs=["NEW_TOPIC"]),
             "seed": DummyChain(outputs=["seed query"]),
             "planning": planning_chain,
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": query_filter_chain,
             "search_decision": _RepeatChain("SEARCH"),
             "response": response_chain,
-            "response_no_search": DummyChain(stream_tokens=[]),
+            "response_no_search": response_no_search_chain,
         }
 
     monkeypatch.setattr(agent_module._chains, "build_llms", fake_build_llms)
@@ -186,5 +183,6 @@ def test_search_loop_guard_prevents_spin(
     agent = agent_module.Agent(AgentConfig(max_rounds=1))
     result = agent.answer_once("Force spin guard?")
 
-    # Search completes successfully - loop protection is implicit through fill_attempts
-    assert result == "ok"
+    # Search runs but finds no results, so uses response_no_search
+    # Loop protection prevents infinite search attempts
+    assert result == "ok_no_results"

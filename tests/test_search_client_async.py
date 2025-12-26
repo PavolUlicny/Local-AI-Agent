@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 from src.search_client_async import AsyncSearchClient
 from src.config import AgentConfig
+from src.search_retry_utils import safe_close_client
 from ddgs.exceptions import DDGSException, TimeoutException
 
 
@@ -384,20 +385,20 @@ class TestAsyncSearchClientSafeClose:
         mock_client = Mock()
         mock_client.close = Mock()
 
-        AsyncSearchClient._safe_close(mock_client)
+        safe_close_client(mock_client)
 
         mock_client.close.assert_called_once()
 
     def test_safe_close_handles_none_client(self):
         """Should handle None client gracefully."""
-        AsyncSearchClient._safe_close(None)
+        safe_close_client(None)
         # Should not raise exception
 
     def test_safe_close_handles_client_without_close_method(self):
         """Should handle client without close method."""
         mock_client = Mock(spec=[])  # No close method
 
-        AsyncSearchClient._safe_close(mock_client)
+        safe_close_client(mock_client)
         # Should not raise exception
 
     def test_safe_close_handles_close_exception(self):
@@ -405,5 +406,5 @@ class TestAsyncSearchClientSafeClose:
         mock_client = Mock()
         mock_client.close.side_effect = Exception("Close failed")
 
-        AsyncSearchClient._safe_close(mock_client)
+        safe_close_client(mock_client)
         # Should not raise exception

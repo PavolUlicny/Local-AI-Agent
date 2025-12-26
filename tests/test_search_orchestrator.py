@@ -5,10 +5,9 @@ from types import SimpleNamespace
 import pytest
 
 from src.search_orchestrator import SearchOrchestrator
-from src.search_chain_utils import SearchAbort
 from src.search_context import SearchContext, SearchServices
 from src.config import AgentConfig
-from src.exceptions import ResponseError
+from src.exceptions import ResponseError, SearchAbort
 
 
 class _StubEmbeddingClient:
@@ -49,6 +48,20 @@ def _make_search_context(**overrides):
     return SearchContext(**{**defaults, **overrides})
 
 
+def _make_query_inputs(**overrides):
+    """Create query_inputs dict for tests using new API."""
+    defaults = {
+        "current_datetime": "d",
+        "current_year": "y",
+        "current_month": "m",
+        "current_day": "dd",
+        "conversation_history": "c",
+        "user_question": "q",
+        "known_answers": "p",
+    }
+    return {**defaults, **overrides}
+
+
 def _make_search_services(
     cfg=None, chains=None, ddg_results=None, embedding_client=None, context_similarity=None, **overrides
 ):
@@ -86,7 +99,7 @@ def test_search_orchestrator_raises_on_result_filter_model_missing() -> None:
     }
 
     # Use user_query with keywords that don't match result to force LLM check
-    context = _make_search_context(user_query="cats birds fish")
+    query_inputs = _make_query_inputs(user_question="cats birds fish")
     services = _make_search_services(
         cfg=cfg,
         chains=chains,
@@ -97,7 +110,7 @@ def test_search_orchestrator_raises_on_result_filter_model_missing() -> None:
     orch = SearchOrchestrator(services)
 
     with pytest.raises(SearchAbort):
-        orch.run(context, should_search=True, primary_search_query="q")
+        orch.run(query_inputs=query_inputs, user_query="cats birds fish", primary_search_query="q")
 
 
 def test_result_included_when_similarity_exceeds_threshold() -> None:
@@ -113,7 +126,7 @@ def test_result_included_when_similarity_exceeds_threshold() -> None:
         "query_filter": SimpleNamespace(invoke=lambda inputs: "NO"),
     }
 
-    context = _make_search_context(question_embedding=[1.0])
+    query_inputs = _make_query_inputs()
     services = _make_search_services(
         cfg=cfg,
         chains=chains,
@@ -123,7 +136,7 @@ def test_result_included_when_similarity_exceeds_threshold() -> None:
     )
     orch = SearchOrchestrator(services)
 
-    aggregated, kws = orch.run(context, should_search=True, primary_search_query="q")
+    aggregated = orch.run(query_inputs=query_inputs, user_query="q", primary_search_query="q")
 
     assert aggregated
 
@@ -151,7 +164,7 @@ def test_result_accepted_by_result_filter() -> None:
     }
 
     # Use user_query with keywords that don't match result to force LLM check
-    context = _make_search_context(user_query="cats birds fish")
+    query_inputs = _make_query_inputs(user_question="cats birds fish")
     services = _make_search_services(
         cfg=cfg,
         chains=chains,
@@ -161,7 +174,7 @@ def test_result_accepted_by_result_filter() -> None:
     )
     orch = SearchOrchestrator(services)
 
-    aggregated, kws = orch.run(context, should_search=True, primary_search_query="q")
+    aggregated = orch.run(query_inputs=query_inputs, user_query="cats birds fish", primary_search_query="q")
 
     assert aggregated
     assert rf.called >= 1
@@ -197,7 +210,7 @@ def test_relevance_retry_on_context_length_then_accepts(monkeypatch) -> None:
     }
 
     # Use user_query with keywords that don't match result to force LLM check
-    context = _make_search_context(user_query="cats birds fish")
+    query_inputs = _make_query_inputs(user_question="cats birds fish")
     services = _make_search_services(
         cfg=cfg,
         chains=chains,
@@ -208,7 +221,7 @@ def test_relevance_retry_on_context_length_then_accepts(monkeypatch) -> None:
     )
     orch = SearchOrchestrator(services)
 
-    aggregated, kws = orch.run(context, should_search=True, primary_search_query="q")
+    aggregated = orch.run(query_inputs=query_inputs, user_query="cats birds fish", primary_search_query="q")
 
     assert aggregated
     assert calls["reduced"] == 1
@@ -251,7 +264,7 @@ def test_planning_retries_on_context_length_and_applies_rebuild() -> None:
     qf = QF()
     chains = {"planning": planning, "query_filter": qf}
 
-    context = _make_search_context()
+    query_inputs = _make_query_inputs()
     services = _make_search_services(
         cfg=cfg,
         chains=chains,
@@ -262,7 +275,7 @@ def test_planning_retries_on_context_length_and_applies_rebuild() -> None:
     )
     orch = SearchOrchestrator(services)
 
-    aggregated, kws = orch.run(context, should_search=True, primary_search_query="q")
+    orch.run(query_inputs=query_inputs, user_query="q", primary_search_query="q")
 
     assert calls["reduced"] == 1
     assert planning.called >= 2
@@ -300,7 +313,7 @@ def test_query_filter_retries_on_context_length_then_accepts() -> None:
 
     chains = {"planning": Planning(), "query_filter": qf}
 
-    context = _make_search_context()
+    query_inputs = _make_query_inputs()
     services = _make_search_services(
         cfg=cfg,
         chains=chains,
@@ -311,7 +324,7 @@ def test_query_filter_retries_on_context_length_then_accepts() -> None:
     )
     orch = SearchOrchestrator(services)
 
-    aggregated, kws = orch.run(context, should_search=True, primary_search_query="q")
+    orch.run(query_inputs=query_inputs, user_query="q", primary_search_query="q")
 
     assert calls["reduced"] == 1
     assert qf.called >= 1
@@ -335,17 +348,21 @@ def test_low_similarity_skips_suggestion() -> None:
     # embedding returns a vector, but similarity function returns low value
     embedding = DummyEmbedding([0.1, 0.2])
 
-    context = _make_search_context(question_embedding=[1.0])
+    query_inputs = _make_query_inputs()
     services = _make_search_services(
         cfg=cfg,
-        chains={"planning": Planning(), "query_filter": QF()},
+        chains={
+            "planning": Planning(),
+            "query_filter": QF(),
+            "result_filter": SimpleNamespace(invoke=lambda inputs: "NO"),
+        },
         ddg_results=ddg_results,
         embedding_client=embedding,
         context_similarity=lambda a, b, c: 0.1,
     )
     orch = SearchOrchestrator(services)
 
-    aggregated, kws = orch.run(context, should_search=True, primary_search_query="q")
+    aggregated = orch.run(query_inputs=query_inputs, user_query="q", primary_search_query="q")
 
     # candidate should be skipped due to low similarity; no results for candidate
     assert not any("S:candidate" in r for r in aggregated)
