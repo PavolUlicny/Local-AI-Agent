@@ -39,7 +39,7 @@ class InputHandler:
         self._input_fn = input_fn
 
     def prompt_messages(self) -> Tuple[Any, str]:
-        """Return (formatted_prompt, plain_prompt) similar to previous code.
+        """Return (formatted_prompt, plain_prompt) tuple for user input.
 
         If `prompt_toolkit.ANSI` is available and `is_tty` is True, return a
         formatted ANSI prompt; otherwise return a plain text prompt string.

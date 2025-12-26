@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Set, TYPE_CHECKING
+from typing import List, TYPE_CHECKING
 
-from src.keywords import extract_keywords
+from src.constants import ITERATION_GUARD_MULTIPLIER, MIN_ITERATION_GUARD
+from src.exceptions import SearchAbort
 from src.text_utils import normalize_query
-from src.search_chain_utils import SearchAbort
-from src.search_context import SearchState
+from src.search_context import SearchContext, SearchState
 from src.search_processing import process_search_round
 from src.search_planning import generate_query_suggestions, enqueue_validated_queries
 from src.search_parallel import process_queries_parallel, should_use_parallel_search
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
-    from src.search_context import SearchContext, SearchServices
+    from src.search_context import SearchServices
 
 
 class SearchOrchestrator:
@@ -30,29 +30,42 @@ class SearchOrchestrator:
 
     def run(
         self,
-        context: "SearchContext",
-        should_search: bool,
+        query_inputs: dict,
+        user_query: str,
         primary_search_query: str,
-    ) -> tuple[List[str], Set[str]]:
+    ) -> List[str]:
         """Execute multi-round search orchestration.
 
         Args:
-            context: Immutable search context (query, conversation, embeddings)
-            should_search: Whether to execute search (False means return empty results)
+            query_inputs: Query input dictionary with conversation history
+            user_query: User's query text
             primary_search_query: Initial search query
 
         Returns:
-            Tuple of (aggregated_results: List[str], topic_keywords: Set[str])
+            List of aggregated result strings
         """
+        # Build immutable search context from query_inputs
+        from datetime import datetime, timezone
+
+        dt_obj = datetime.now(timezone.utc)
+
+        # Embed the user query for search result similarity checking
+        question_embedding = self.services.embedding_client.embed(user_query)
+
+        context = SearchContext(
+            current_datetime=query_inputs.get("current_datetime", ""),
+            current_year=query_inputs.get("current_year", str(dt_obj.year)),
+            current_month=query_inputs.get("current_month", f"{dt_obj.month:02d}"),
+            current_day=query_inputs.get("current_day", f"{dt_obj.day:02d}"),
+            user_query=user_query,
+            conversation_text=query_inputs.get("conversation_history", ""),
+            prior_responses_text=query_inputs.get("known_answers", ""),
+            question_embedding=question_embedding,  # Embed user query for result similarity
+            topic_embedding_current=None,  # Topic embeddings removed in refactor
+        )
+
         # Initialize mutable state
         state = SearchState()
-
-        # Early exit if search disabled
-        if not should_search:
-            return [], state.topic_keywords
-
-        # Extract initial topic keywords from user query
-        state.topic_keywords.update(extract_keywords(context.user_query))
 
         # Initialize search state
         aggregated_results: List[str] = []
@@ -63,8 +76,6 @@ class SearchOrchestrator:
         max_fill_attempts = self.services.cfg.max_fill_attempts
 
         # Iteration guard to prevent infinite loops
-        ITERATION_GUARD_MULTIPLIER = 4
-        MIN_ITERATION_GUARD = 20
         iteration_guard = max(max_rounds * ITERATION_GUARD_MULTIPLIER, MIN_ITERATION_GUARD)
         iteration_count = 0
 
@@ -192,13 +203,8 @@ class SearchOrchestrator:
                 iteration_count,
             )
 
-        # Extract keywords from final topic_keywords set
-        MAX_KEYWORDS_FOR_LLM = 50
-        kw_list = sorted(state.topic_keywords) if state.topic_keywords else []
-        if len(kw_list) > MAX_KEYWORDS_FOR_LLM:
-            state.topic_keywords = set(kw_list[:MAX_KEYWORDS_FOR_LLM])
-
-        return aggregated_results, state.topic_keywords
+        # Return aggregated results only (topic keywords removed)
+        return aggregated_results
 
 
 __all__ = ["SearchOrchestrator"]

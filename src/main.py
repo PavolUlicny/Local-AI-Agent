@@ -45,7 +45,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     # returns a boolean so the caller can decide how to handle failures.
     try:
         # Run the full Ollama check/start/wait workflow. Exit the process
-        # on failure to match previous strict behavior.
+        # on failure with non-zero status.
         check_and_start_ollama(exit_on_failure=True)
     except Exception as e:
         logger.error("Unexpected error while checking Ollama availability: %s", e)

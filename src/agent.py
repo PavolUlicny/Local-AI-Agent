@@ -2,36 +2,40 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, Callable, List, Set, TextIO, cast
+from typing import TYPE_CHECKING, Any, Callable, List, TextIO, cast
 
 from . import agent_utils as _agent_utils_mod
-from . import chains as _chains
-from . import context as _context_mod
+from . import chains as _chains  # noqa: F401 - used by tests for monkeypatching
+from . import input_validation as _input_validation_mod
+from .constants import (
+    ChainName,
+    RebuildKey,
+    MIN_CHAR_BUDGET,
+    CHARS_PER_TOKEN_ESTIMATE,
+    CONTEXT_SAFETY_MARGIN,
+    MAX_SEARCH_RESULTS_CHARS,
+)
+from . import commands as _commands_mod
+from . import conversation as _conversation_mod
 from . import embedding_client as _embedding_client_mod
 from . import exceptions as _exceptions
 from . import input_handler as _input_handler_mod
+from . import llm_lifecycle as _llm_lifecycle_mod
 from . import model_utils as _model_utils_mod
 from . import response as _response_mod
 from . import search as _search_mod
 from . import search_client as _search_client_mod
 from . import search_orchestrator as _search_orchestrator_mod
 from . import text_utils as _text_utils_mod
-from . import topic_manager as _topic_manager_mod
-from . import topic_utils as _topic_utils_mod
-from . import topics as _topics_mod
 
 if TYPE_CHECKING:
     from prompt_toolkit import PromptSession as PromptSessionType
 
     from .config import AgentConfig
-    from .context import QueryContext as QueryContextType
     from .search_orchestrator import SearchOrchestrator as SearchOrchestratorType
-    from .topic_utils import Topic as TopicType
 else:
     PromptSessionType = Any
     SearchOrchestratorType = Any
-    TopicType = Any
-    QueryContextType = Any
 
 PromptSession: Any | None
 ANSI: Any | None
@@ -50,61 +54,52 @@ else:
     ANSI = _ANSI
     InMemoryHistory = _InMemoryHistory
 
-QueryContext = _context_mod.QueryContext
-build_query_context = _context_mod.build_query_context
 agent_utils = _agent_utils_mod
 search = _search_mod
 response = _response_mod
-topics = _topics_mod
-
-# Character budget calculation constants
-MIN_CHAR_BUDGET = 1024  # Minimum character budget regardless of context size
-CHARS_PER_TOKEN_ESTIMATE = 4  # Rough estimate of characters per LLM token
-CONTEXT_SAFETY_MARGIN = 0.8  # Use 80% of context to leave safety margin
 
 
 class Agent:
     """Main agent orchestrator for conversational AI with web search capabilities.
 
-    Coordinates LLM interactions, topic management, search operations, and response
-    generation. Manages conversation context, handles user queries, and maintains
-    topic-based conversation history with semantic similarity matching.
+    Coordinates LLM interactions, conversation management, search operations, and response
+    generation. Uses a simple conversation list that leverages 128k context windows of
+    modern LLMs instead of complex topic tracking.
     """
 
     def __init__(self, cfg: AgentConfig, *, output_stream: TextIO | None = None, is_tty: bool | None = None):
         self.cfg = cfg
-        self.llm_robot, self.llm_assistant = _chains.build_llms(cfg)
-        self.chains = _chains.build_chains(self.llm_robot, self.llm_assistant)
+
+        # Use LLMManager for lifecycle management
+        self._llm_manager = _llm_lifecycle_mod.LLMManager(cfg)
+        self.llm_robot, self.llm_assistant = self._llm_manager.get_llms()
+        self.chains = self._llm_manager.get_chains()
+
         self.search_client = _search_client_mod.SearchClient(
             cfg,
             normalizer=self._normalize_search_result,
             notify_retry=self._notify_search_retry,
         )
+        # Keep embedding client for search result filtering only
         self.embedding_client = _embedding_client_mod.EmbeddingClient(cfg.embedding_model)
-        self.topic_manager = _topic_manager_mod.TopicManager(
-            cfg,
-            embedding_client=self.embedding_client,
-            char_budget=self._char_budget,
-        )
-        self.rebuild_counts = {
-            "search_decision": 0,
-            "seed": 0,
-            "relevance": 0,
-            "planning": 0,
-            "query_filter": 0,
-            "answer": 0,
+
+        # New conversation management
+        self.conversation = _conversation_mod.ConversationManager(max_context_chars=cfg.max_conversation_chars)
+        self.command_handler = _commands_mod.CommandHandler(self.conversation)
+
+        self.rebuild_counts: dict[str, int] = {
+            str(RebuildKey.SEARCH_DECISION): 0,
+            str(RebuildKey.SEED): 0,
+            str(RebuildKey.RELEVANCE): 0,
+            str(RebuildKey.PLANNING): 0,
+            str(RebuildKey.QUERY_FILTER): 0,
+            str(RebuildKey.ANSWER): 0,
         }
-        self.topics: List[TopicType] = []
         self._prompt_session: PromptSessionType | None = None
         self._last_error: str | None = None
         self._out: TextIO = output_stream or sys.stdout
         self._is_tty: bool = bool(is_tty if is_tty is not None else getattr(self._out, "isatty", lambda: False)())
-        self._base_llm_params = {
-            "assistant_num_ctx": cfg.assistant_num_ctx,
-            "robot_num_ctx": cfg.robot_num_ctx,
-            "assistant_num_predict": cfg.assistant_num_predict,
-            "robot_num_predict": cfg.robot_num_predict,
-        }
+
         # Initialize input handler for prompt/session related helpers.
         # Provide a handler instance; prompt session may be created lazily.
         # Use direct attribute access rather than getattr with constant names.
@@ -116,8 +111,9 @@ class Agent:
             self._out.write(text)
             if hasattr(self._out, "flush"):
                 self._out.flush()
-        except Exception as exc:
-            logging.debug("Output stream write failed: %s", exc)
+        except OSError as exc:
+            # Output stream errors (IOError, BrokenPipeError are OSError subclasses in Python 3)
+            logging.error("Output stream write failed: %s", exc)
 
     def _writeln(self, text: str = "") -> None:
         self._write(f"{text}\n")
@@ -174,7 +170,7 @@ class Agent:
             [
                 "Welcome to Local AI Agent.",
                 "Made by Pavol Ulicny.",
-                "Enter submits your message. Type 'exit' to quit.",
+                "Enter submits your message. Type '/quit' to exit or '/help' for commands.",
             ]
         )
         if ANSI is not None and self._is_tty:
@@ -183,102 +179,77 @@ class Agent:
             self._writeln(message)
 
     # Dynamic config updates after rebuild
-    def _rebuild_llms(self, new_ctx: int, new_predict: int) -> None:
-        self.cfg.assistant_num_ctx = new_ctx
-        self.cfg.robot_num_ctx = new_ctx
-        self.cfg.assistant_num_predict = new_predict
-        self.cfg.robot_num_predict = min(self.cfg.robot_num_predict, new_predict)
-        self.llm_robot, self.llm_assistant = _chains.build_llms(self.cfg)
-        self.chains = _chains.build_chains(self.llm_robot, self.llm_assistant)
+    def _reduce_context_and_rebuild(self, stage_key: str, label: str) -> None:
+        """Reduce context and rebuild LLMs - delegates to LLMManager."""
+        self._llm_manager.rebuild_with_reduced_context(stage_key, label, self.rebuild_counts)
+        # Update references to rebuilt LLMs and chains
+        self.llm_robot, self.llm_assistant = self._llm_manager.get_llms()
+        self.chains = self._llm_manager.get_chains()
 
     def _restore_llm_params(self) -> None:
-        base = self._base_llm_params
-        cfg = self.cfg
-        needs_restore = any(
-            [
-                cfg.assistant_num_ctx != base["assistant_num_ctx"],
-                cfg.robot_num_ctx != base["robot_num_ctx"],
-                cfg.assistant_num_predict != base["assistant_num_predict"],
-                cfg.robot_num_predict != base["robot_num_predict"],
-            ]
-        )
-        if not needs_restore:
-            return
-        cfg.assistant_num_ctx = base["assistant_num_ctx"]
-        cfg.robot_num_ctx = base["robot_num_ctx"]
-        cfg.assistant_num_predict = base["assistant_num_predict"]
-        cfg.robot_num_predict = base["robot_num_predict"]
-        self.llm_robot, self.llm_assistant = _chains.build_llms(cfg)
-        self.chains = _chains.build_chains(self.llm_robot, self.llm_assistant)
-
-    def _reduce_context_and_rebuild(self, stage_key: str, label: str) -> None:
-        self.rebuild_counts[stage_key] += 1
-        current_ctx = min(self.cfg.assistant_num_ctx, self.cfg.robot_num_ctx)
-        current_predict = self.cfg.assistant_num_predict
-        # Compute a reduced context that does not increase the current context.
-        # Use a conservative lower bound (1024 chars-worth tokens) and halve the
-        # context, but never grow it: reduced_ctx = min(current_ctx, max(1024, current_ctx // 2)).
-        reduced_ctx_candidate = max(1024, current_ctx // 2)
-        reduced_ctx = min(current_ctx, reduced_ctx_candidate)
-        reduced_predict = max(512, min(current_predict, reduced_ctx // 2))
-        logging.info(
-            "Context too large (%s); rebuild %s/%s with num_ctx=%s, num_predict=%s.",
-            label,
-            self.rebuild_counts[stage_key],
-            _text_utils_mod.MAX_REBUILD_RETRIES,
-            reduced_ctx,
-            reduced_predict,
-        )
-        self._rebuild_llms(reduced_ctx, reduced_predict)
+        """Restore LLMs to original parameters - delegates to LLMManager."""
+        self._llm_manager.restore_original_params()
+        # Update references after restoration
+        self.llm_robot, self.llm_assistant = self._llm_manager.get_llms()
+        self.chains = self._llm_manager.get_chains()
 
     def _invoke_chain_safe(self, chain_name: str, inputs: dict[str, Any], rebuild_key: str | None = None) -> Any:
         """Delegate to `src.agent_utils.invoke_chain_safe` for centralized handling."""
         return agent_utils.invoke_chain_safe(self, chain_name, inputs, rebuild_key)
 
-    def _decide_should_search(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> bool:
-        """Run the search_decision classifier and return True if SEARCH decided.
+    def _sanitize_user_input(self, user_query: str) -> str:
+        """Sanitize user input (delegates to input_validation module).
 
-        Delegates to `agent_utils.decide_should_search` for implementation.
+        Args:
+            user_query: Raw user query
+
+        Returns:
+            Sanitized query string
+
+        Raises:
+            InputValidationError: If input contains suspicious injection patterns
         """
-        return cast(bool, agent_utils.decide_should_search(self, ctx, user_query, prior_responses_text))
+        return _input_validation_mod.sanitize_user_input(user_query)
 
-    def _generate_search_seed(self, ctx: "QueryContextType", user_query: str, prior_responses_text: str) -> str:
-        """Generate a refined search query via the seed chain.
+    def _build_query_inputs(self, user_query: str) -> dict[str, Any]:
+        """Build input dictionary for LLM chains - simplified without topic system.
 
-        Delegates to `agent_utils.generate_search_seed` for implementation.
+        Args:
+            user_query: Current user query
+
+        Returns:
+            Dictionary of inputs for prompt templates
         """
-        return cast(str, agent_utils.generate_search_seed(self, ctx, user_query, prior_responses_text))
+        from datetime import datetime, timezone
 
-    def _run_search_rounds(
-        self,
-        ctx: "QueryContextType",
-        user_query: str,
-        should_search: bool,
-        primary_search_query: str,
-        question_embedding: List[float] | None,
-        topic_embedding_current: List[float] | None,
-        topic_keywords: Set[str],
-    ) -> tuple[List[str], Set[str]]:
-        """Run search orchestration via SearchOrchestrator and return results + keywords.
+        # Get current datetime info
+        current_datetime = _text_utils_mod.current_datetime_utc()
+        dt_obj = datetime.now(timezone.utc)
+        current_year = str(dt_obj.year)
+        current_month = f"{dt_obj.month:02d}"
+        current_day = f"{dt_obj.day:02d}"
 
-        This is a thin wrapper around `SearchOrchestrator.run` so the orchestration
-        callsite in `_handle_query_core` is easier to test and reason about.
-        It may raise `_search_orchestrator_mod.SearchAbort` which callers should handle.
-        """
-        # Delegate search orchestration to the `src.search` module.
-        return cast(
-            tuple[List[str], Set[str]],
-            search.run_search_rounds(
-                self,
-                ctx,
-                user_query,
-                should_search,
-                primary_search_query,
-                question_embedding,
-                topic_embedding_current,
-                topic_keywords,
-            ),
-        )
+        # Format conversation history (simple!)
+        conversation_history = self.conversation.format_for_prompt()
+
+        # Truncate if needed to fit in budget
+        max_conv_chars = self._char_budget(self.cfg.max_conversation_chars)
+        if len(conversation_history) > max_conv_chars:
+            # Truncate from the beginning (keep recent context)
+            conversation_history = "...\n\n" + conversation_history[-max_conv_chars:]
+
+        # Build inputs dict
+        return {
+            "current_datetime": current_datetime,
+            "current_year": current_year,
+            "current_month": current_month,
+            "current_day": current_day,
+            "conversation_history": conversation_history,
+            "user_question": user_query,
+            # Provide conversation history under multiple keys for different prompt templates
+            "known_answers": conversation_history,  # Used by some prompts
+            "prior_responses": conversation_history,  # Used by response prompts
+        }
 
     def _build_resp_inputs(
         self,
@@ -328,36 +299,6 @@ class Agent:
             logging.error("Response generation delegation failed: %s", exc)
             self._mark_error("Answer generation failed unexpectedly; see logs for details.")
             return None
-
-    def _update_topics(
-        self,
-        selected_topic_index: int | None,
-        topic_keywords: Set[str],
-        question_keywords: List[str],
-        aggregated_results: List[str],
-        user_query: str,
-        response_text: str,
-        question_embedding: List[float] | None,
-    ) -> int | None:
-        """Wrap `topic_manager.update_topics` for easier testing and isolation.
-
-        Returns the selected topic index (or None) as the underlying method does.
-        """
-        # Delegate to `src.topics.update_topics` to keep topic-related logic
-        # isolated and easier to unit test.
-        return cast(
-            int | None,
-            topics.update_topics(
-                self,
-                selected_topic_index,
-                topic_keywords,
-                question_keywords,
-                aggregated_results,
-                user_query,
-                response_text,
-                question_embedding,
-            ),
-        )
 
     def _ddg_results(self, query: str) -> Any:
         if self.search_client is None:
@@ -419,13 +360,30 @@ class Agent:
         question_embedding: List[float] | None,
         topic_embedding: List[float] | None,
     ) -> float:
+        """Calculate cosine similarity between candidate and context embeddings.
+
+        Used by search result filtering to determine semantic relevance.
+        Returns max similarity if multiple context embeddings provided.
+        """
         if not candidate_embedding:
             return 0.0
+
+        def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+            """Calculate cosine similarity between two vectors."""
+            if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+                return 0.0
+            dot_product = sum(a * b for a, b in zip(vec_a, vec_b))
+            magnitude_a = sum(a * a for a in vec_a) ** 0.5
+            magnitude_b = sum(b * b for b in vec_b) ** 0.5
+            if magnitude_a == 0.0 or magnitude_b == 0.0:
+                return 0.0
+            return float(dot_product / (magnitude_a * magnitude_b))
+
         scores: List[float] = []
         if question_embedding:
-            scores.append(_topic_utils_mod.cosine_similarity(candidate_embedding, question_embedding))
+            scores.append(cosine_similarity(candidate_embedding, question_embedding))
         if topic_embedding:
-            scores.append(_topic_utils_mod.cosine_similarity(candidate_embedding, topic_embedding))
+            scores.append(cosine_similarity(candidate_embedding, topic_embedding))
         return max(scores) if scores else 0.0
 
     def _read_user_query(self) -> str:
@@ -457,14 +415,26 @@ class Agent:
                 try:
                     user_query = self._read_user_query().strip()
                 except (KeyboardInterrupt, EOFError):
-                    logging.info("Exiting due to interrupt/EOF.")
-                    return
-                if not user_query:
-                    logging.info("No input provided.")
+                    self._writeln("\nInterrupted. Type '/quit' to exit.")
                     continue
+                if not user_query:
+                    continue
+
+                # Check for commands first
+                is_command, response_msg, should_exit = self.command_handler.handle(user_query)
+                if is_command:
+                    if response_msg:
+                        self._writeln(response_msg)
+                    if should_exit:
+                        return
+                    continue
+
+                # Handle exit/quit keywords
                 if user_query.lower() in {"exit", "quit"}:
-                    logging.info("Goodbye!")
+                    self._writeln("Goodbye! (Tip: use '/quit' or '/exit' for cleaner exit)")
                     return
+
+                # Process query
                 self._handle_query(user_query, one_shot=False)
                 if self._last_error:
                     self._writeln(self._last_error)
@@ -480,103 +450,194 @@ class Agent:
         finally:
             self._restore_llm_params()
 
+    def _determine_search_necessity(self, query_inputs: dict[str, Any]) -> bool | None:
+        """Determine whether search is needed for this query.
+
+        Args:
+            query_inputs: Prompt inputs for LLM
+
+        Returns:
+            True if search is needed, False if not, None on error
+
+        Side Effects:
+            - May call _mark_error if search decision fails
+        """
+        cfg = self.cfg
+
+        # Check force_search flag
+        if cfg.force_search:
+            return True
+
+        # Check auto_search_decision setting
+        if not cfg.auto_search_decision:
+            return False
+
+        # Invoke search decision chain
+        try:
+            decision_inputs = query_inputs.copy()
+            decision_raw = self._invoke_chain_safe(
+                ChainName.SEARCH_DECISION, decision_inputs, str(RebuildKey.SEARCH_DECISION)
+            )
+            if decision_raw is None:
+                return None
+
+            # Normalize to SEARCH or NO_SEARCH
+            decision_str = str(decision_raw).strip().upper().replace("_", "").replace("-", "")
+            return "SEARCH" in decision_str and "NO" not in decision_str
+
+        except _exceptions.ResponseError as exc:
+            if "not found" in str(exc).lower():
+                _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
+                return None
+            logging.error("Search decision failed: %s", exc)
+            self._mark_error("Search decision failed; please retry.")
+            return None
+
+    def _generate_seed_query(self, query_inputs: dict[str, Any], user_query: str) -> str | None:
+        """Generate a search seed query from the user query.
+
+        Args:
+            query_inputs: Prompt inputs for LLM
+            user_query: Original user query as fallback
+
+        Returns:
+            Search seed query, or None on error
+
+        Side Effects:
+            - May call _mark_error if seed generation fails
+        """
+        try:
+            seed_inputs = query_inputs.copy()
+            seed_result = self._invoke_chain_safe(ChainName.SEED, seed_inputs, str(RebuildKey.SEED))
+            if seed_result is None:
+                return None
+            return _text_utils_mod.pick_seed_query(str(seed_result).strip(), user_query)
+
+        except _exceptions.ResponseError as exc:
+            if "not found" in str(exc).lower():
+                _model_utils_mod.handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
+                return None
+            logging.error("Seed generation failed: %s", exc)
+            self._mark_error("Seed query generation failed; please retry.")
+            return None
+
+    def _execute_search_pipeline(
+        self, query_inputs: dict[str, Any], user_query: str, primary_search_query: str
+    ) -> List[str]:
+        """Execute the search orchestration pipeline.
+
+        Args:
+            query_inputs: Prompt inputs for LLM
+            user_query: Original user query
+            primary_search_query: Initial search query to start with
+
+        Returns:
+            List of aggregated search result texts
+
+        Side Effects:
+            - May raise SearchAbort if search must be abandoned
+        """
+        orchestrator = self._build_search_orchestrator()
+        return orchestrator.run(
+            query_inputs=query_inputs,
+            user_query=user_query,
+            primary_search_query=primary_search_query,
+        )
+
+    def _generate_response(
+        self,
+        query_inputs: dict[str, Any],
+        aggregated_results: List[str],
+        should_search: bool,
+        one_shot: bool,
+    ) -> str | None:
+        """Generate the final response text.
+
+        Args:
+            query_inputs: Prompt inputs for LLM
+            aggregated_results: Search results (if any)
+            should_search: Whether search was performed
+            one_shot: Whether this is a one-shot query
+
+        Returns:
+            Response text, or None on error
+
+        Side Effects:
+            - Streams response to stdout
+        """
+        # Prepare search results text
+        search_results_text = "\n\n".join(aggregated_results) if should_search and aggregated_results else ""
+        if search_results_text:
+            search_results_text = _text_utils_mod.truncate_text(
+                search_results_text, self._char_budget(MAX_SEARCH_RESULTS_CHARS)
+            )
+
+        # Build response inputs
+        resp_inputs = query_inputs.copy()
+        if should_search and search_results_text:
+            resp_inputs["search_results"] = search_results_text
+            chain_name = ChainName.RESPONSE
+        else:
+            chain_name = ChainName.RESPONSE_NO_SEARCH
+
+        # Generate and stream response
+        return self._generate_and_stream_response(resp_inputs, chain_name, one_shot)
+
     def _handle_query_core(self, user_query: str, one_shot: bool) -> str | None:
-        # Phase 1: Context & State Initialization
+        """Core query handling logic - simplified for conversation system.
+
+        Args:
+            user_query: User's question
+            one_shot: Whether this is a one-shot query (for --question mode)
+
+        Returns:
+            Response text or None on error
+        """
+        # Phase 1: Initialize and sanitize
         self._clear_error()
         self._reset_rebuild_counts()
-        ctx = build_query_context(self, user_query)
-        cfg = self.cfg
-        current_datetime = ctx.current_datetime
-        current_year = ctx.current_year
-        current_month = ctx.current_month
-        current_day = ctx.current_day
-        question_keywords = ctx.question_keywords
-        question_embedding = ctx.question_embedding
-        selected_topic_index = ctx.selected_topic_index
-        topic_keywords = ctx.topic_keywords
-        topic_embedding_current = ctx.topic_embedding_current
-        conversation_text = ctx.conversation_text
-        prior_responses_text = ctx.prior_responses_text
 
+        try:
+            sanitized_query = self._sanitize_user_input(user_query)
+        except ValueError as e:
+            # Input validation failed (e.g., prompt injection detected)
+            self._mark_error(str(e))
+            return None
+
+        query_inputs = self._build_query_inputs(sanitized_query)
+
+        # Phase 2: Determine if search is needed
+        should_search = self._determine_search_necessity(query_inputs)
+        if should_search is None:  # Error occurred
+            return None
+
+        # Phase 3: Execute search if needed
         aggregated_results: List[str] = []
-
-        # Phase 2: Search Decision
-        should_search = bool(cfg.force_search)
-        if not should_search and cfg.auto_search_decision:
-            try:
-                should_search = self._decide_should_search(ctx, user_query, prior_responses_text)
-            except _exceptions.ResponseError as exc:
-                if "not found" in str(exc).lower():
-                    _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
-                    return None
-                # Context length and other errors already handled by agent_utils.decide_should_search
-                logging.error("Search decision failed: %s", exc)
-                self._mark_error("Search decision failed; please retry.")
-                return None
-        elif not cfg.auto_search_decision and not cfg.force_search:
-            should_search = False
-
-        # Phase 3: Search Seed Generation & Search Orchestration
         if should_search:
-            try:
-                primary_search_query = self._generate_search_seed(ctx, user_query, prior_responses_text)
-            except _exceptions.ResponseError as exc:
-                if "not found" in str(exc).lower():
-                    _model_utils_mod.handle_missing_model(self._mark_error, "Robot", cfg.robot_model)
+            primary_search_query = self._generate_seed_query(query_inputs, sanitized_query)
+            if primary_search_query is None:  # Error occurred
+                return None
+
+            if primary_search_query:  # Empty string check
+                try:
+                    aggregated_results = self._execute_search_pipeline(
+                        query_inputs, sanitized_query, primary_search_query
+                    )
+                except _search_orchestrator_mod.SearchAbort:
                     return None
-                # Context length and other errors already handled by agent_utils.generate_search_seed
-                logging.error("Seed generation failed: %s", exc)
-                self._mark_error("Seed query generation failed; please retry.")
-                return None
 
-            # Phase 4: Search Orchestration
-            try:
-                aggregated_results, topic_keywords = self._run_search_rounds(
-                    ctx,
-                    user_query,
-                    should_search,
-                    primary_search_query,
-                    question_embedding,
-                    topic_embedding_current,
-                    topic_keywords,
-                )
-            except _search_orchestrator_mod.SearchAbort:
-                return None
-
-        # Phase 5: Response Generation
-        search_results_text = (
-            "\n\n".join(aggregated_results)
-            if should_search and aggregated_results
-            else ("No search results collected." if should_search else "No web search performed.")
-        )
-        search_results_text = _text_utils_mod.truncate_text(
-            search_results_text, self._char_budget(_text_utils_mod.MAX_SEARCH_RESULTS_CHARS)
-        )
-        resp_inputs, chain_name = self._build_resp_inputs(
-            current_datetime,
-            current_year,
-            current_month,
-            current_day,
-            conversation_text,
-            user_query,
-            should_search,
-            prior_responses_text,
-            search_results_text if should_search else None,
-        )
-        response_text = self._generate_and_stream_response(resp_inputs, chain_name, one_shot)
+        # Phase 4: Generate response
+        response_text = self._generate_response(query_inputs, aggregated_results, should_search, one_shot)
         if response_text is None:
             return None
 
-        # Phase 6: Topic Update
-        selected_topic_index = self._update_topics(
-            selected_topic_index,
-            topic_keywords,
-            question_keywords,
-            aggregated_results,
-            user_query,
-            response_text,
-            question_embedding,
+        # Phase 5: Update conversation history
+        self.conversation.add_turn(
+            user_query=sanitized_query,
+            assistant_response=response_text,
+            search_used=bool(aggregated_results),
         )
+
         return response_text
 
 
