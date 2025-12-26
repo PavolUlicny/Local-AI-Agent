@@ -23,15 +23,16 @@ ConversationTurn = Tuple[str, str, datetime, bool]
 
 @dataclass
 class ConversationStats:
-    """Statistics about the current conversation."""
+    """Statistics about the current conversation and session."""
 
     turns: int
     chars: int
     budget: int
-    usage_percent: int
     search_turns: int
-    oldest_timestamp: datetime | None
-    newest_timestamp: datetime | None
+    session_searches: int
+    session_start_time: datetime
+    robot_model: str
+    assistant_model: str
 
 
 class ConversationManager:
@@ -164,49 +165,72 @@ class ConversationManager:
 
         return "\n\n".join(formatted)
 
-    def get_stats(self) -> ConversationStats:
-        """Get conversation statistics.
+    def get_stats(
+        self,
+        *,
+        session_start_time: datetime,
+        session_searches: int,
+        robot_model: str,
+        assistant_model: str,
+    ) -> ConversationStats:
+        """Get conversation and session statistics.
+
+        Args:
+            session_start_time: When the agent session started
+            session_searches: Total searches performed this session
+            robot_model: Name of robot model
+            assistant_model: Name of assistant model
 
         Returns:
             ConversationStats object with current state
         """
         chars = self._total_chars()
-        oldest = self.turns[0][2] if self.turns else None
-        newest = self.turns[-1][2] if self.turns else None
         search_count = sum(1 for _, _, _, search_used in self.turns if search_used)
 
         return ConversationStats(
             turns=len(self.turns),
             chars=chars,
             budget=self.max_context_chars,
-            usage_percent=int(chars / self.max_context_chars * 100) if self.max_context_chars > 0 else 0,
             search_turns=search_count,
-            oldest_timestamp=oldest,
-            newest_timestamp=newest,
+            session_searches=session_searches,
+            session_start_time=session_start_time,
+            robot_model=robot_model,
+            assistant_model=assistant_model,
         )
 
-    def format_stats(self, stats: ConversationStats | None = None) -> str:
+    def format_stats(self, stats: ConversationStats) -> str:
         """Format statistics as a human-readable string.
 
         Args:
-            stats: Optional pre-computed stats, otherwise fetches current
+            stats: Conversation statistics to format
 
         Returns:
             Formatted statistics string
         """
-        if stats is None:
-            stats = self.get_stats()
+        # Calculate session duration
+        now = datetime.now(timezone.utc)
+        session_duration = now - stats.session_start_time
+
+        # Format duration nicely (e.g., "2h 15m 30s" or "45m 12s")
+        hours = int(session_duration.total_seconds() // 3600)
+        minutes = int((session_duration.total_seconds() % 3600) // 60)
+        seconds = int(session_duration.total_seconds() % 60)
+
+        if hours > 0:
+            duration_str = f"{hours}h {minutes}m {seconds}s"
+        elif minutes > 0:
+            duration_str = f"{minutes}m {seconds}s"
+        else:
+            duration_str = f"{seconds}s"
 
         lines = [
-            "\nConversation Statistics:",
-            f"  Turns: {stats.turns}",
-            f"  Characters: {stats.chars:,} / {stats.budget:,}",
-            f"  Usage: {stats.usage_percent}%",
+            "\nSession Statistics:",
+            f"  Duration: {duration_str}",
+            f"  Questions: {stats.turns}",
+            f"  Searches: {stats.session_searches} (total), {stats.search_turns} (current conversation)",
+            f"  Memory: {stats.chars:,} / {stats.budget:,} chars",
+            f"  Models: {stats.robot_model} (robot), {stats.assistant_model} (assistant)",
         ]
-
-        if stats.oldest_timestamp and stats.newest_timestamp:
-            duration = stats.newest_timestamp - stats.oldest_timestamp
-            lines.append(f"  Duration: {duration}")
 
         return "\n".join(lines)
 

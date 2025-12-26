@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, List, TextIO, cast
 
 from . import agent_utils as _agent_utils_mod
@@ -85,7 +86,12 @@ class Agent:
 
         # New conversation management
         self.conversation = _conversation_mod.ConversationManager(max_context_chars=cfg.max_conversation_chars)
-        self.command_handler = _commands_mod.CommandHandler(self.conversation)
+
+        # Session tracking
+        self._session_start_time = datetime.now(timezone.utc)
+        self._session_search_count = 0
+
+        self.command_handler = _commands_mod.CommandHandler(self.conversation, self)
 
         self.rebuild_counts: dict[str, int] = {
             str(RebuildKey.SEARCH_DECISION): 0,
@@ -537,6 +543,9 @@ class Agent:
         Side Effects:
             - May raise SearchAbort if search must be abandoned
         """
+        # Track session-wide search count
+        self._session_search_count += 1
+
         orchestrator = self._build_search_orchestrator()
         return orchestrator.run(
             query_inputs=query_inputs,
