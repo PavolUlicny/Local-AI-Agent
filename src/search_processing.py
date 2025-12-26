@@ -2,16 +2,71 @@
 
 from __future__ import annotations
 
-import hashlib
 from typing import List, TYPE_CHECKING
 
-from src.keywords import extract_keywords
-from src.text_utils import truncate_result
-from src.url_utils import canonicalize_url
-from src.search_validation import check_result_relevance
+from src.search_processing_common import process_result_core
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from src.search_context import SearchContext, SearchServices, SearchState
+
+
+class DirectStateAccessor:
+    """Direct accessor for SearchState (non-thread-safe, for sequential processing).
+
+    Implements the same interface as ThreadSafeState but without locking overhead
+    since it's used in single-threaded contexts.
+    """
+
+    def __init__(self, state: "SearchState"):
+        self.state = state
+
+    # Atomic check-and-add operations (no locking needed for single-threaded)
+    def check_and_add_url(self, url: str) -> bool:
+        """Check if URL exists and add if not.
+
+        Returns:
+            True if URL was added (new), False if it already existed
+        """
+        if url in self.state.seen_urls:
+            return False
+        self.state.seen_urls.add(url)
+        return True
+
+    def check_and_add_result_hash(self, hash_value: str) -> bool:
+        """Check if result hash exists and add if not.
+
+        Returns:
+            True if hash was added (new), False if it already existed
+        """
+        if hash_value in self.state.seen_result_hashes:
+            return False
+        self.state.seen_result_hashes.add(hash_value)
+        return True
+
+    # Individual query operations
+    def has_url(self, url: str) -> bool:
+        """Check if URL has been seen."""
+        return url in self.state.seen_urls
+
+    def has_result_hash(self, hash_value: str) -> bool:
+        """Check if result hash has been seen."""
+        return hash_value in self.state.seen_result_hashes
+
+    def add_result_hash(self, hash_value: str) -> None:
+        """Add a result hash to the seen set."""
+        self.state.seen_result_hashes.add(hash_value)
+
+    def add_url(self, url: str) -> None:
+        """Add a URL to the seen set."""
+        self.state.seen_urls.add(url)
+
+    def update_keywords(self, keywords: set[str]) -> None:
+        """Update topic keywords with new keywords."""
+        self.state.topic_keywords.update(keywords)
+
+    def get_topic_keywords(self) -> set[str]:
+        """Get current topic keywords."""
+        return self.state.topic_keywords
 
 
 def process_search_result(
@@ -41,61 +96,15 @@ def process_search_result(
         - Updates state.seen_urls if result is accepted
         - Updates state.topic_keywords if result is accepted
     """
-    # Extract and clean fields
-    title = str(result.get("title", "")).strip()
-    link = str(result.get("link", "")).strip()
-    snippet = str(result.get("snippet", "")).strip()
-
-    # Skip empty results
-    if not any([title, snippet, link]):
-        return None, relevance_llm_checks
-
-    # Deduplicate by URL
-    norm_link = canonicalize_url(link) if link else ""
-    if norm_link and norm_link in state.seen_urls:
-        return None, relevance_llm_checks
-
-    # Assemble result text
-    assembled = "\n".join(
-        part
-        for part in [
-            (f"Title: {title}" if title else ""),
-            (f"URL: {link}" if link else ""),
-            (f"Snippet: {snippet}" if snippet else ""),
-        ]
-        if part
-    )
-
-    # Deduplicate by content hash
-    result_hash = hashlib.sha256(assembled.encode("utf-8", errors="ignore")).hexdigest()
-    if result_hash in state.seen_result_hashes:
-        return None, relevance_llm_checks
-
-    # Prepare for relevance check
-    result_text = truncate_result(assembled)
-    keywords_source = " ".join([part for part in [title, snippet] if part])
-
-    # Check relevance using three-tier approach
-    is_relevant_result, updated_llm_checks = check_result_relevance(
-        result_text=result_text,
-        keywords_source=keywords_source,
+    state_accessor = DirectStateAccessor(state)
+    return process_result_core(
+        result=result,
         current_query=current_query,
-        topic_keywords=state.topic_keywords,
         relevance_llm_checks=relevance_llm_checks,
         context=context,
+        state_accessor=state_accessor,
         services=services,
     )
-
-    if not is_relevant_result:
-        return None, updated_llm_checks
-
-    # Accept result: update tracking sets
-    state.seen_result_hashes.add(result_hash)
-    if norm_link:
-        state.seen_urls.add(norm_link)
-    state.topic_keywords.update(extract_keywords(keywords_source))
-
-    return result_text, updated_llm_checks
 
 
 def process_search_round(

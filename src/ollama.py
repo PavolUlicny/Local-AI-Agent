@@ -24,8 +24,10 @@ import urllib.error
 import urllib.request
 from typing import Optional, Any
 
-DEFAULT_PORT = 11434
-DEFAULT_HOST = "127.0.0.1"
+from .constants import DEFAULT_OLLAMA_PORT, DEFAULT_OLLAMA_HOST
+
+DEFAULT_PORT = DEFAULT_OLLAMA_PORT  # Convenience alias
+DEFAULT_HOST = DEFAULT_OLLAMA_HOST  # Convenience alias
 
 
 # Platform-appropriate default log path: compute lazily so callers/tests can
@@ -95,6 +97,8 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen[Any
     log = None
     if log_path is None:
         log_path = get_default_log_path()
+
+    # Try to open log file
     try:
         expanded = os.path.expanduser(log_path)
         # Ensure directory exists where possible. Guard against empty
@@ -110,6 +114,7 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen[Any
         logger.debug("Unable to open Ollama log file '%s', proceeding without log file", log_path)
         log = None
 
+    # Use try-finally to ensure log file is always closed in parent process
     try:
         # Start the process with platform-appropriate flags. Avoid using a
         # dict and `**` expansion so static type checkers can validate the
@@ -123,28 +128,24 @@ def start_detached(log_path: str | None = None) -> Optional[subprocess.Popen[Any
         else:
             proc = subprocess.Popen(["ollama", "serve"], stdout=stdout_val, stderr=stderr_val, start_new_session=True)
 
-        # Close our parent-side handle to the logfile to avoid leaking
-        # descriptors; the child process retains its copy created by Popen.
-        if log:
-            try:
-                log.close()
-            except Exception:
-                logger.debug("Failed to close local log file in parent", exc_info=True)
-
         pid = getattr(proc, "pid", None)
         if pid:
             logger.debug("Started Ollama (pid %s)", pid)
         return proc
     except FileNotFoundError:
         logger.error("Failed to start Ollama: 'ollama' not found at execution time")
-        if log:
-            log.close()
         return None
     except Exception as e:
         logger.error("Failed to start Ollama: %s", e)
-        if log:
-            log.close()
         return None
+    finally:
+        # Always close the parent's handle to the logfile to avoid leaking
+        # file descriptors. The child process retains its own copy.
+        if log:
+            try:
+                log.close()
+            except Exception:
+                logger.debug("Failed to close log file in parent", exc_info=True)
 
 
 def wait_for_ready(

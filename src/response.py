@@ -21,18 +21,28 @@ else:
 from . import exceptions as _exceptions
 from . import text_utils as _text_utils_mod
 from . import model_utils as _model_utils_mod
+from .constants import ChainName, RebuildKey, MAX_REBUILD_RETRIES
 
 
 def generate_and_stream_response(
     agent: Any,
     resp_inputs: dict[str, Any],
-    chain_name: str,
+    chain_name: ChainName | str,  # Accept both enums and strings
     one_shot: bool,
     write_fn: Callable[[str], None] | None = None,
 ) -> str | None:
     if write_fn is None:
         write_fn = agent._write
     cfg = agent.cfg
+
+    # Convert string to ChainName if needed (allow arbitrary strings for test flexibility)
+    if isinstance(chain_name, str):
+        try:
+            chain_name = ChainName(chain_name)
+        except ValueError:
+            # Not a valid enum value - keep as string (used by tests)
+            pass
+
     chain = agent.chains[chain_name]
     try:
         response_stream = chain.stream(resp_inputs)
@@ -41,10 +51,12 @@ def generate_and_stream_response(
             _model_utils_mod.handle_missing_model(agent._mark_error, "Assistant", cfg.assistant_model)
             return None
         if _text_utils_mod.is_context_length_error(str(exc)):
-            if agent.rebuild_counts["answer"] < _text_utils_mod.MAX_REBUILD_RETRIES:
-                agent._reduce_context_and_rebuild("answer", "answer")
+            if agent.rebuild_counts[RebuildKey.ANSWER] < MAX_REBUILD_RETRIES:
+                agent._reduce_context_and_rebuild(RebuildKey.ANSWER, "answer")
                 try:
-                    chain = agent.chains["response"] if chain_name == "response" else agent.chains["response_no_search"]
+                    chain = agent.chains[
+                        ChainName.RESPONSE if chain_name == ChainName.RESPONSE else ChainName.RESPONSE_NO_SEARCH
+                    ]
                     response_stream = chain.stream(resp_inputs)
                 except _exceptions.ResponseError as exc2:
                     logging.error(f"Answer generation failed after retry: {exc2}")
@@ -61,8 +73,14 @@ def generate_and_stream_response(
             logging.error(f"Answer generation failed: {exc}")
             agent._mark_error("Answer generation failed; see logs for details.")
             return None
+    except (RuntimeError, ValueError, TypeError) as exc:
+        # Runtime/programming errors (should be rare)
+        logging.error(f"Answer generation failed with error: {exc}", exc_info=True)
+        agent._mark_error("Answer generation failed; see logs for details.")
+        return None
     except Exception as exc:
-        logging.error(f"Answer generation failed unexpectedly: {exc}")
+        # Truly unexpected errors
+        logging.error(f"Answer generation failed unexpectedly: {exc}", exc_info=True)
         agent._mark_error("Answer generation failed unexpectedly; see logs for details.")
         return None
 
@@ -78,9 +96,18 @@ def generate_and_stream_response(
             write_fn(chunk)
     except KeyboardInterrupt:
         logging.info("Streaming interrupted by user.")
-    except Exception as exc:
+    except (ConnectionError, TimeoutError, OSError) as exc:
+        # Network/connection errors during streaming
         stream_error = exc
-        logging.error(f"Streaming error: {exc}")
+        logging.error(f"Streaming network error: {exc}")
+    except (RuntimeError, ValueError) as exc:
+        # Runtime errors during streaming
+        stream_error = exc
+        logging.error(f"Streaming runtime error: {exc}", exc_info=True)
+    except Exception as exc:
+        # Unexpected streaming errors
+        stream_error = exc
+        logging.error(f"Unexpected streaming error: {exc}", exc_info=True)
     if response_chunks and not response_chunks[-1].endswith("\n"):
         agent._writeln()
     if one_shot:

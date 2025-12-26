@@ -1,4 +1,4 @@
-"""Parallel search orchestration with backward-compatible synchronous interface."""
+"""Parallel search orchestration with synchronous interface."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def process_queries_parallel(
         normalizer = normalizer_fn._normalize_search_result
     else:
         # Fallback: ddg_results might be a bound method, use identity function
-        def identity_normalizer(x: dict) -> dict[str, str] | None:
+        def identity_normalizer(_: dict) -> dict[str, str] | None:
             return None
 
         normalizer = identity_normalizer
