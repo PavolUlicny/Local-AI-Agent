@@ -7,12 +7,13 @@ The agent exposes many CLI flags for tuning behavior. Use the table below for qu
 | `--no-auto-search` | `--nas` | off | Disable automatic web search decision (use `--force-search` to always perform web search). |
 | `--force-search` | `--fs` | off | Bypass classifier and always perform SEARCH for the current turn. |
 | `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds (seed + planned). |
-| `--max-context-turns` | `--mct` | `8` | Turns retained from a topic for context injection. |
+| `--max-conversation-chars` | `--mcc` | `24000` | Maximum characters to keep in conversation history (~16k tokens). |
+| `--compact-keep-turns` | `--ckt` | `10` | Number of recent turns to keep when compacting with /compact command. |
 | `--max-followup-suggestions` | `--mfs` | `6` | Max query suggestions per planning cycle. |
 | `--max-fill-attempts` | `--mfa` | `3` | Extra planning passes to fill remaining slots. |
 | `--max-relevance-llm-checks` | `--mrlc` | `2` | LLM relevance validations for borderline results per query. |
-| `--assistant-num-ctx` | `--anc` | `8192` | Context window tokens for assistant chains. |
-| `--robot-num-ctx` | `--rnc` | `8192` | Context window tokens for robot (classifier/planner) chains. |
+| `--assistant-num-ctx` | `--anc` | `16384` | Context window tokens for assistant chains. |
+| `--robot-num-ctx` | `--rnc` | `16384` | Context window tokens for robot (classifier/planner) chains. |
 | `--assistant-num-predict` | `--anp` | `4096` | Generation cap for assistant chains. |
 | `--robot-num-predict` | `--rnp` | `512` | Generation cap for classifier/planner chains (keeps them fast/cheap). |
 | `--robot-temp` | `--rt` | `0.0` | Temperature for classifier/planner chains. |
@@ -33,9 +34,7 @@ The agent exposes many CLI flags for tuning behavior. Use the table below for qu
 | `--log-file` | `--lf` | `None` | Optional file log path. |
 | `--log-console` | `--lc` | `on` | Emit logs to stderr when enabled; pass `--no-log-console` to keep the console clean. If both `--no-log-console` and no `--log-file` are provided, logs are discarded via a NullHandler. |
 | `--question` | `--q` | `None` | One-shot non-interactive question mode. |
-| `--embedding-model` | `--em` | `embeddinggemma:300m` | Ollama embedding model used for topic similarity checks. |
-| `--embedding-similarity-threshold` | `--est` | `0.35` | Minimum cosine similarity for a topic to be considered when no keywords overlap. |
-| `--embedding-history-decay` | `--ehd` | `0.65` | Weight [0-1) that keeps prior topic embeddings when blending in a new turn (lower = faster adaptation). |
+| `--embedding-model` | `--em` | `embeddinggemma:300m` | Ollama embedding model used for search result filtering. |
 | `--embedding-result-similarity-threshold` | `--erst` | `0.5` | Semantic similarity needed for a search result to skip the LLM relevance gate. |
 | `--embedding-query-similarity-threshold` | `--eqst` | `0.3` | Minimum similarity before a planned query is passed to the LLM query filter. |
 | `--robot-model` | `--rm` | `cogito:8b` | Ollama model for robot (planning/classifier) chains. |
@@ -53,6 +52,18 @@ python3 -m src.main --robot-model llama3:8b --assistant-model llama3:8b
 ```
 
 Adjust `--assistant-num-ctx` / `--robot-num-ctx` and `--assistant-num-predict` / `--robot-num-predict` according to the model's capabilities.
+
+## Slash Commands
+
+During interactive sessions, you can use these commands:
+
+| Command | Aliases | Description |
+| ------- | ------- | ----------- |
+| `/quit` | `/exit`, `/q` | Exit the agent. |
+| `/clear` | `/reset`, `/new` | Clear conversation history and start fresh. |
+| `/compact` | `/compress` | Keep only the last N turns (configured via `--compact-keep-turns`). |
+| `/stats` | | Show conversation statistics (turn count, character count, search usage). |
+| `/help` | | Display available commands. |
 
 ## Quick Start Examples
 

@@ -9,7 +9,7 @@ Local AI Agent runs entirely on your machine, combining an Ollama‑served model
 - Iterative planning of follow‑up search queries (bounded by `--max-rounds`).
 - Dual relevance filters: keyword heuristics and LLM YES/NO validation, plus embedding-based shortcuts.
 - Result deduplication (canonicalized URLs + SHA‑256 hash).
-- Adaptive truncation, multi-topic memory, embedding-assisted relevance.
+- Adaptive truncation, conversation history management with auto-trim, embedding-assisted result filtering.
 
 ### Core Architecture
 
@@ -23,22 +23,24 @@ High‑level components and their roles:
 | Search Orchestrator (`search_orchestrator.SearchOrchestrator`) | Coordinates search rounds, deduplication, planning, and fill cycles. |
 | Search Client (`search_client.SearchClient`) | DDGS metasearch with retry/backoff and normalized result payloads. |
 | Search Context (`search_context`) | Bundles search state, services, and immutable context. |
-| Topic Manager (`topic_manager.TopicManager`) | Maintains per-topic turns, keyword sets, and blended embeddings. |
-| Embedding Client (`embedding_client.EmbeddingClient`) | Cached, fault-tolerant access to Ollama embeddings. |
+| Conversation Manager (`conversation.ConversationManager`) | Maintains conversation history with auto-trim to respect character budget. |
+| Command Handler (`commands.CommandHandler`) | Processes slash commands like /quit, /clear, /compact, /stats, /help. |
+| Embedding Client (`embedding_client.EmbeddingClient`) | Cached, fault-tolerant access to Ollama embeddings for result filtering. |
 | Keyword/Text Utilities (`keywords.py`, `text_utils.py`) | Keyword extraction, tokenization, truncation, formatting. |
-| URL & Topic Utilities (`url_utils.py`, `topic_utils.py`) | URL canonicalization, cosine similarity, tail turns, topic briefs. |
+| URL Utilities (`url_utils.py`) | URL canonicalization and normalization. |
 
 ### Execution Pipeline
 
 ```text
 User Input
  │
- ├─► Context Classification (FOLLOW_UP / EXPAND / NEW_TOPIC)
+ ├─► Command Check (/quit, /clear, /compact, /stats, /help)
  ├─► Search Decision (SEARCH / NO_SEARCH)
  ├─► Seed Query Generation
  ├─► Iterative Round Loop (≤ max-rounds)
  ├─► Aggregate & Truncate Results
- └─► Final Answer Prompt (with or without search context)
+ ├─► Final Answer Prompt (with conversation history + search results)
+ └─► Add Turn to Conversation (auto-trim if over budget)
 ```
 
 ### Modules & Responsibilities
@@ -48,26 +50,31 @@ User Input
 - `src/main.py`: Entry point wiring CLI args to the Agent.
 - `src/agent.py`: Main agent orchestrator coordinating context, search, and response synthesis.
 - `src/agent_utils.py`: Agent helper functions for query processing and context management.
-- `src/config.py`: Configuration dataclass with all agent parameters and defaults.
+- `src/config.py`: Pydantic configuration model with declarative validation and field constraints.
 - `src/cli.py`: CLI argument parser and logging configuration.
+- `src/llm_lifecycle.py`: LLM lifecycle management (building, rebuilding with reduced context, restoration).
+- `src/constants.py`: Type-safe enums and constant values (chain names, rebuild keys, etc.).
 
 **Search System:**
 
 - `src/search.py`: High-level search interface and orchestrator builder.
 - `src/search_orchestrator.py`: Coordinates search rounds, deduplication, and planning.
 - `src/search_planning.py`: Query planning and candidate generation.
-- `src/search_processing.py`: Result processing and aggregation.
+- `src/search_processing.py`: Synchronous result processing and aggregation.
+- `src/search_processing_async.py`: Asynchronous result processing for parallel operations.
+- `src/search_processing_common.py`: Common processing utilities shared between sync and async.
+- `src/search_parallel.py`: Parallel query execution coordination.
 - `src/search_validation.py`: Result and query filtering logic.
-- `src/search_client.py`: DDGS wrapper with retries and normalization.
+- `src/search_client.py`: Synchronous DDGS wrapper with retries and normalization.
+- `src/search_client_async.py`: Asynchronous DDGS wrapper for parallel searches.
 - `src/search_context.py`: Context objects bundling search state and dependencies.
-- `src/search_chain_utils.py`: Shared utilities for search chain operations.
+- `src/search_chain_utils.py`: Chain invocation utilities with retry logic.
+- `src/search_retry_utils.py`: Shared retry logic, backoff, and exception handling for search clients.
 
-**Context & Topics:**
+**Conversation & Commands:**
 
-- `src/context.py`: Query context dataclass for processing pipeline.
-- `src/topic_manager.py`: Topic lifecycle and embedding blending.
-- `src/topics.py`: Topic data structures and management.
-- `src/topic_utils.py`: Topic utilities (similarity, briefs, tail turns).
+- `src/conversation.py`: Conversation history management with auto-trim and statistics.
+- `src/commands.py`: Slash command handling (/quit, /clear, /compact, /stats, /help).
 
 **LLM Integration:**
 
@@ -82,8 +89,9 @@ User Input
 
 - `src/keywords.py`: Keyword extraction and filtering.
 - `src/text_utils.py`: Text tokenization, truncation, and formatting.
-- `src/url_utils.py`: URL canonicalization and normalization.
+- `src/url_utils.py`: URL canonicalization, normalization, and SSRF protection.
 - `src/input_handler.py`: Interactive prompt/session helpers.
-- `src/exceptions.py`: Custom exception types.
+- `src/exceptions.py`: Custom exception hierarchy (ConfigurationError, InputValidationError, SearchError, etc.).
+- `src/protocols.py`: Type protocols for dependency injection and interface contracts.
 
 Refer to the `src/` module files for implementation details.

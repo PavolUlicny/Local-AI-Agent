@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import sys
 
 
@@ -14,6 +13,7 @@ def main() -> int:
         from src.config import AgentConfig
         from src.agent import Agent
         from src.search_client import SearchClient
+        from src.constants import ChainName
     except ModuleNotFoundError as e:  # pragma: no cover - CI discovery failure
         missing_root = getattr(e, "name", "").split(".")[0]
         if missing_root != "src":
@@ -26,7 +26,7 @@ def main() -> int:
         parser = build_arg_parser()
         ns = parser.parse_args([])
         ns_defaults = vars(ns)
-        cfg_defaults = dataclasses.asdict(AgentConfig())
+        cfg_defaults = AgentConfig().model_dump()
 
         missing_from_cli = sorted(set(cfg_defaults) - set(ns_defaults))
         if missing_from_cli:
@@ -52,25 +52,24 @@ def main() -> int:
 
         # 3) Chains present and have expected interfaces
         expected = {
-            "context",
-            "seed",
-            "planning",
-            "result_filter",
-            "query_filter",
-            "search_decision",
-            "response",
-            "response_no_search",
+            ChainName.SEED,
+            ChainName.PLANNING,
+            ChainName.RESULT_FILTER,
+            ChainName.QUERY_FILTER,
+            ChainName.SEARCH_DECISION,
+            ChainName.RESPONSE,
+            ChainName.RESPONSE_NO_SEARCH,
         }
         keys = set(agent.chains.keys())
-        missing = sorted(expected - keys)
+        missing = sorted(expected - keys, key=str)
         if missing:
-            print("MISSING_CHAINS:", ", ".join(missing))
+            print("MISSING_CHAINS:", ", ".join(str(c) for c in missing))
             return 1
 
-        if not hasattr(agent.chains["context"], "invoke"):
-            print("CHAIN_API_ERROR: context chain missing 'invoke'")
+        if not hasattr(agent.chains[ChainName.SEED], "invoke"):
+            print("CHAIN_API_ERROR: seed chain missing 'invoke'")
             return 1
-        if not hasattr(agent.chains["response"], "stream"):
+        if not hasattr(agent.chains[ChainName.RESPONSE], "stream"):
             print("CHAIN_API_ERROR: response chain missing 'stream'")
             return 1
 
