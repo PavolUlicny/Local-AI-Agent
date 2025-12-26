@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from src.conversation import ConversationManager
@@ -134,22 +134,37 @@ def test_get_stats():
     cm.add_turn("How are you?", "Good", search_used=False)
     cm.add_turn("What's up?", "Not much", search_used=True)
 
-    stats = cm.get_stats()
+    session_start = datetime.now(timezone.utc)
+    stats = cm.get_stats(
+        session_start_time=session_start,
+        session_searches=5,
+        robot_model="test-robot:1b",
+        assistant_model="test-assistant:3b",
+    )
     assert stats.turns == 3
     assert stats.chars > 0
     assert stats.budget == 1000
-    assert 0 <= stats.usage_percent <= 100
     assert stats.search_turns == 2
+    assert stats.session_searches == 5
+    assert stats.robot_model == "test-robot:1b"
+    assert stats.assistant_model == "test-assistant:3b"
+    assert stats.session_start_time == session_start
 
 
 def test_get_stats_empty():
     cm = ConversationManager(max_context_chars=1000)
-    stats = cm.get_stats()
+    session_start = datetime.now(timezone.utc)
+    stats = cm.get_stats(
+        session_start_time=session_start,
+        session_searches=0,
+        robot_model="test-robot:1b",
+        assistant_model="test-assistant:3b",
+    )
     assert stats.turns == 0
     assert stats.chars == 0
     assert stats.budget == 1000
-    assert stats.usage_percent == 0
     assert stats.search_turns == 0
+    assert stats.session_searches == 0
 
 
 def test_auto_trim_preserves_at_least_one_turn():

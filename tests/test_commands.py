@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from unittest.mock import Mock
+
 import pytest
 
 from src.commands import CommandHandler
@@ -11,7 +14,15 @@ from src.conversation import ConversationManager
 @pytest.fixture
 def handler():
     cm = ConversationManager(max_context_chars=10000)
-    return CommandHandler(cm)
+
+    # Create mock agent with required attributes
+    mock_agent = Mock()
+    mock_agent._session_start_time = datetime.now(timezone.utc)
+    mock_agent._session_search_count = 0
+    mock_agent.cfg.robot_model = "test-robot:1b"
+    mock_agent.cfg.assistant_model = "test-assistant:3b"
+
+    return CommandHandler(cm, mock_agent)
 
 
 def test_quit_command(handler):
@@ -90,10 +101,19 @@ def test_stats_command(handler):
     handler.conversation.add_turn("Hello", "Hi", search_used=True)
     handler.conversation.add_turn("How are you?", "Good", search_used=False)
 
+    # Update mock agent's session search count
+    handler.agent._session_search_count = 3
+
     is_command, response, should_exit = handler.handle("/stats")
     assert is_command is True
-    assert "2" in response  # 2 turns
-    assert "1" in response  # 1 search turn
+    assert "2" in response  # 2 turns (questions)
+    assert "1" in response  # 1 search in current conversation
+    assert "3" in response  # 3 total session searches
+    assert "Session Statistics:" in response
+    assert "Duration:" in response
+    assert "Models:" in response
+    assert "test-robot:1b" in response
+    assert "test-assistant:3b" in response
     assert should_exit is False
 
 
@@ -126,10 +146,11 @@ def test_command_with_whitespace(handler):
     assert should_exit is True
 
 
-def test_partial_command_not_recognized(handler):
+def test_partial_command_shows_unknown(handler):
     is_command, response, should_exit = handler.handle("/qui")
-    assert is_command is False
-    assert response is None
+    assert is_command is True
+    assert "Unknown command" in response
+    assert "/help" in response
     assert should_exit is False
 
 
@@ -137,4 +158,19 @@ def test_command_in_middle_not_recognized(handler):
     is_command, response, should_exit = handler.handle("Please /quit now")
     assert is_command is False
     assert response is None
+    assert should_exit is False
+
+
+def test_typo_command_shows_unknown(handler):
+    is_command, response, should_exit = handler.handle("/sttas")
+    assert is_command is True
+    assert "Unknown command: /sttas" in response
+    assert "/help" in response
+    assert should_exit is False
+
+
+def test_unknown_command_with_whitespace(handler):
+    is_command, response, should_exit = handler.handle("  /notacommand  ")
+    assert is_command is True
+    assert "Unknown command" in response
     assert should_exit is False
