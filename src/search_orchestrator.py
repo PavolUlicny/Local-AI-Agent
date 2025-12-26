@@ -127,6 +127,8 @@ class SearchOrchestrator:
                     continue
                 state.seen_query_norms.add(norm_query)
 
+                logging.info(f"Executing query: {current_query}")
+
                 # Execute search round
                 round_results = process_search_round(
                     current_query=current_query,

@@ -472,10 +472,12 @@ class Agent:
 
         # Check force_search flag
         if cfg.force_search:
+            logging.info("Agent chose to search (force_search enabled)")
             return True
 
         # Check auto_search_decision setting
         if not cfg.auto_search_decision:
+            logging.info("Agent chose not to search (auto_search disabled)")
             return False
 
         # Invoke search decision chain
@@ -489,7 +491,12 @@ class Agent:
 
             # Normalize to SEARCH or NO_SEARCH
             decision_str = str(decision_raw).strip().upper().replace("_", "").replace("-", "")
-            return "SEARCH" in decision_str and "NO" not in decision_str
+            should_search = "SEARCH" in decision_str and "NO" not in decision_str
+            if should_search:
+                logging.info("Agent chose to search")
+            else:
+                logging.info("Agent chose not to search")
+            return should_search
 
         except _exceptions.ResponseError as exc:
             if "not found" in str(exc).lower():
@@ -586,8 +593,10 @@ class Agent:
         if should_search and search_results_text:
             resp_inputs["search_results"] = search_results_text
             chain_name = ChainName.RESPONSE
+            logging.info("Generating response with search results")
         else:
             chain_name = ChainName.RESPONSE_NO_SEARCH
+            logging.info("Generating response without search results")
 
         # Generate and stream response
         return self._generate_and_stream_response(resp_inputs, chain_name, one_shot)

@@ -45,6 +45,7 @@ def check_result_relevance(
     # Tier 1: Fast keyword matching
     relevant = is_relevant(result_text, topic_keywords)
     if relevant:
+        logging.info("Result accepted (keyword match)")
         return True, relevance_llm_checks
 
     # Tier 2: Embedding similarity check
@@ -55,10 +56,12 @@ def check_result_relevance(
         context.topic_embedding_current,
     )
     if similarity >= services.cfg.embedding_result_similarity_threshold:
+        logging.info(f"Result accepted (embedding similarity: {similarity:.2f})")
         return True, relevance_llm_checks
 
     # Tier 3: LLM judgment (with limit)
     if relevance_llm_checks >= services.cfg.max_relevance_llm_checks:
+        logging.info("Result rejected (max LLM checks reached)")
         return False, relevance_llm_checks
 
     kw_list = sorted(topic_keywords) if topic_keywords else []
@@ -95,8 +98,10 @@ def check_result_relevance(
         relevance_llm_checks += 1
 
     if relevance_decision == "YES":
+        logging.info("Result accepted (LLM verification)")
         return True, relevance_llm_checks
     else:
+        logging.info("Result rejected (LLM verification)")
         return False, relevance_llm_checks
 
 
@@ -162,7 +167,12 @@ def validate_candidate_query(
         return False
 
     verdict = regex_validate(verdict_raw, PATTERN_YES_NO, "NO")
-    return verdict == "YES"
+    if verdict == "YES":
+        logging.info("Accepted follow-up query: %s", candidate)
+        return True
+    else:
+        logging.info("Rejected follow-up query: %s", candidate)
+        return False
 
 
 __all__ = ["check_result_relevance", "validate_candidate_query"]

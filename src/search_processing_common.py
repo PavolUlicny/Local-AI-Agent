@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from typing import Protocol, TYPE_CHECKING
 
 from src.keywords import extract_keywords
@@ -107,6 +108,7 @@ def process_result_core(
     if norm_link:
         # check_and_add_url returns False if URL already existed (duplicate)
         if not state_accessor.check_and_add_url(norm_link):
+            logging.info(f"Skipping duplicate URL: {norm_link}")
             return None, relevance_llm_checks
         # URL was added successfully, continue processing
 
@@ -126,6 +128,7 @@ def process_result_core(
     if not state_accessor.check_and_add_result_hash(result_hash):
         # Hash already existed, this is a duplicate
         # Note: URL was already added above, but that's okay - URL deduplication will catch future instances
+        logging.info(f"Skipping duplicate content (hash: {result_hash[:8]}...)")
         return None, relevance_llm_checks
     # Hash was added successfully, continue processing
 
