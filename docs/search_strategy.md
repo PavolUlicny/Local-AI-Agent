@@ -1,8 +1,8 @@
 ## Search Strategy & Filtering
 
 1. Decide necessity (SEARCH vs NO_SEARCH) via a classifier chain.
-2. Generate a seed query (fallback to original if generation fails).
-3. Maintain a queue of pending queries (seed + planned follow‑ups) up to `--max-rounds`.
+2. Generate initial queries using the planning prompt.
+3. Maintain a queue of pending queries up to `--max-rounds`.
 4. For each query:
 
 - Fetch `--search-max-results` results (with retry/backoff).

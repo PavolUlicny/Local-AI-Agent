@@ -5,8 +5,7 @@ Local AI Agent runs entirely on your machine, combining an Ollama‑served model
 ### Key Features
 
 - Automatic search decision (SEARCH vs NO_SEARCH) via a dedicated prompt classifier.
-- Seed query synthesis distinct from the raw user question to broaden retrieval.
-- Iterative planning of follow‑up search queries (bounded by `--max-rounds`).
+- Query planning to generate initial and follow-up search queries (bounded by `--max-rounds`).
 - Dual relevance filters: keyword heuristics and LLM YES/NO validation, plus embedding-based shortcuts.
 - Result deduplication (canonicalized URLs + SHA‑256 hash).
 - Adaptive truncation, conversation history management with auto-trim, embedding-assisted result filtering.
@@ -36,7 +35,7 @@ User Input
  │
  ├─► Command Check (/quit, /clear, /compact, /stats, /help)
  ├─► Search Decision (SEARCH / NO_SEARCH)
- ├─► Seed Query Generation
+ ├─► Query Planning & Validation
  ├─► Iterative Round Loop (≤ max-rounds)
  ├─► Aggregate & Truncate Results
  ├─► Final Answer Prompt (with conversation history + search results)

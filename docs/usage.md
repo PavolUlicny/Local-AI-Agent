@@ -6,7 +6,7 @@ The agent exposes many CLI flags for tuning behavior. Use the table below for qu
 | ------ | ------- | --------- | ------------- |
 | `--no-auto-search` | `--nas` | off | Disable automatic web search decision (use `--force-search` to always perform web search). |
 | `--force-search` | `--fs` | off | Bypass classifier and always perform SEARCH for the current turn. |
-| `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds (seed + planned). |
+| `--max-rounds` | `--mr` | `12` | Upper bound on search query rounds. |
 | `--max-conversation-chars` | `--mcc` | `24000` | Maximum characters to keep in conversation history (~16k tokens). |
 | `--compact-keep-turns` | `--ckt` | `10` | Number of recent turns to keep when compacting with /compact command. |
 | `--max-followup-suggestions` | `--mfs` | `6` | Max query suggestions per planning cycle. |
