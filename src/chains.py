@@ -60,6 +60,7 @@ def build_chains(llm_robot: OllamaLLM, llm_assistant: OllamaLLM) -> Dict[ChainNa
         ChainName.PLANNING: _prompts.planning_prompt | llm_robot | StrOutputParser(),
         ChainName.RESULT_FILTER: _prompts.result_filter_prompt | llm_robot | StrOutputParser(),
         ChainName.QUERY_FILTER: _prompts.query_filter_prompt | llm_robot | StrOutputParser(),
+        ChainName.QUERY_REWRITE: _prompts.query_rewrite_prompt | llm_robot | StrOutputParser(),
         ChainName.SEARCH_DECISION: _prompts.search_decision_prompt | llm_robot | StrOutputParser(),
         ChainName.RESPONSE: _prompts.response_prompt | llm_assistant | StrOutputParser(),
         ChainName.RESPONSE_NO_SEARCH: _prompts.response_prompt_no_search | llm_assistant | StrOutputParser(),
