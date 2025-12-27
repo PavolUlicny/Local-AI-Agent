@@ -98,6 +98,7 @@ class TestChainNameEnum:
         assert ChainName.PLANNING.value == "planning"
         assert ChainName.RESULT_FILTER.value == "result_filter"
         assert ChainName.QUERY_FILTER.value == "query_filter"
+        assert ChainName.QUERY_REWRITE.value == "query_rewrite"
         assert ChainName.SEARCH_DECISION.value == "search_decision"
         assert ChainName.RESPONSE.value == "response"
         assert ChainName.RESPONSE_NO_SEARCH.value == "response_no_search"
@@ -132,9 +133,11 @@ class TestRebuildKeyEnum:
         """RebuildKey should define all rebuild tracking keys."""
         from src.constants import RebuildKey
 
+        assert RebuildKey.SEARCH_DECISION.value == "search_decision"
         assert RebuildKey.PLANNING.value == "planning"
         assert RebuildKey.RELEVANCE.value == "relevance"
         assert RebuildKey.QUERY_FILTER.value == "query_filter"
+        assert RebuildKey.QUERY_REWRITE.value == "query_rewrite"
         assert RebuildKey.ANSWER.value == "answer"
 
     def test_rebuild_key_str_compatible(self):
