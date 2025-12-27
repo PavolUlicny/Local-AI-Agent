@@ -82,10 +82,11 @@ def enqueue_validated_queries(
 
     Side Effects:
         - Appends validated queries to pending_queries
-        - Updates state.seen_query_norms with normalized queries
+        - Checks state.seen_query_norms to prevent duplicates (but doesn't modify it)
     """
     for candidate in candidate_queries:
         norm_candidate = normalize_query(candidate)
+        # Check if query already queued or executed, or if queue is full
         if norm_candidate in state.seen_query_norms or len(pending_queries) >= max_rounds:
             continue
 
@@ -95,7 +96,7 @@ def enqueue_validated_queries(
             services=services,
         ):
             pending_queries.append(candidate)
-            state.seen_query_norms.add(norm_candidate)
+            # Note: seen_query_norms is updated during query execution, not here
         else:
             logging.info("Skipping off-topic follow-up suggestion: %s", candidate)
 

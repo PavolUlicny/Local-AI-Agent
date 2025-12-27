@@ -67,8 +67,8 @@ class SearchServices:
         cfg: Agent configuration with LLM parameters and search settings (thresholds,
             retry limits, max rounds, etc.)
         chains: Dictionary of LangChain chains by ChainName enum. Expected keys include
-            ChainName.SEED, ChainName.PLANNING, ChainName.QUERY_FILTER,
-            ChainName.RESULT_FILTER, ChainName.RESPONSE, and ChainName.RESPONSE_NO_SEARCH
+            ChainName.PLANNING, ChainName.QUERY_FILTER, ChainName.RESULT_FILTER,
+            ChainName.RESPONSE, and ChainName.RESPONSE_NO_SEARCH
         embedding_client: Client for generating text embeddings for similarity checks,
             used for query/result similarity filtering before LLM validation
         ddg_results: Callback to fetch search results from DuckDuckGo
