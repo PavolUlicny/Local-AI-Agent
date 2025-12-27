@@ -23,6 +23,7 @@ def test_search_decision_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
+            "query_rewrite": DummyChain(outputs=["test query"]),
             "search_decision": ErrorChain(),
             "response": DummyChain(stream_tokens=["unused"]),
             "response_no_search": DummyChain(stream_tokens=["unused"]),

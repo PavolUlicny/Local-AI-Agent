@@ -22,6 +22,7 @@ def test_search_client_closed_after_answer_once(monkeypatch: pytest.MonkeyPatch)
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
+            "query_rewrite": DummyChain(outputs=["test query"]),
             "search_decision": DummyChain(outputs=["NO_SEARCH"]),
             "response": DummyChain(stream_tokens=["unused"]),
             "response_no_search": response_chain,
