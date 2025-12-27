@@ -52,7 +52,6 @@ def main() -> int:
 
         # 3) Chains present and have expected interfaces
         expected = {
-            ChainName.SEED,
             ChainName.PLANNING,
             ChainName.RESULT_FILTER,
             ChainName.QUERY_FILTER,
@@ -66,9 +65,6 @@ def main() -> int:
             print("MISSING_CHAINS:", ", ".join(str(c) for c in missing))
             return 1
 
-        if not hasattr(agent.chains[ChainName.SEED], "invoke"):
-            print("CHAIN_API_ERROR: seed chain missing 'invoke'")
-            return 1
         if not hasattr(agent.chains[ChainName.RESPONSE], "stream"):
             print("CHAIN_API_ERROR: response chain missing 'stream'")
             return 1
