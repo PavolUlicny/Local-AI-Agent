@@ -19,7 +19,6 @@ def test_search_client_closed_after_answer_once(monkeypatch: pytest.MonkeyPatch)
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),

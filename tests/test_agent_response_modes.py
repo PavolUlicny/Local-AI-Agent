@@ -20,7 +20,6 @@ def test_answer_once_without_search_uses_response_no_search(
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         chains = {
-            "seed": DummyChain(outputs=["seed query"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
@@ -60,7 +59,6 @@ def test_zero_context_turns_drop_history(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
@@ -94,7 +92,6 @@ def test_rebuild_counts_reset_each_query(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
@@ -126,7 +123,6 @@ def test_fatal_error_bubbles_via_last_error(monkeypatch: pytest.MonkeyPatch) -> 
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
@@ -158,7 +154,6 @@ def test_force_search_skips_classifier(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
@@ -194,7 +189,6 @@ def test_stream_error_does_not_persist_state(monkeypatch: pytest.MonkeyPatch) ->
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),

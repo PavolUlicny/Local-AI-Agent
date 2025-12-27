@@ -371,7 +371,7 @@ class TestSearchOrchestratorParallelIntegration:
         def ddg_results(q: str):
             return [{"title": f"T:{q}", "link": f"http://x/{q}", "snippet": f"S:{q}"}]
 
-        # Planning chain that returns multiple follow-up queries
+        # Planning chain that returns multiple initial queries
         class PlanningChain:
             def __init__(self):
                 self.call_count = 0
@@ -408,12 +408,9 @@ class TestSearchOrchestratorParallelIntegration:
             with patch("src.search_orchestrator.process_search_round") as mock_sequential:
                 mock_sequential.return_value = ["result0"]
 
-                orch.run(query_inputs=query_inputs, user_query="test query", primary_search_query="query1")
+                orch.run(query_inputs=query_inputs, user_query="test query")
 
-                # Should call sequential once for the first query
-                assert mock_sequential.call_count >= 1
-
-                # Should call parallel when multiple queries are pending
+                # When multiple queries are generated, they're processed in parallel
                 assert mock_parallel.call_count >= 1
 
     def test_orchestrator_uses_sequential_when_max_concurrent_is_one(self):
@@ -451,7 +448,7 @@ class TestSearchOrchestratorParallelIntegration:
             with patch("src.search_orchestrator.should_use_parallel_search") as mock_should_use:
                 mock_should_use.return_value = False
 
-                orch.run(query_inputs=query_inputs, user_query="test query", primary_search_query="query1")
+                orch.run(query_inputs=query_inputs, user_query="test query")
 
                 # should_use_parallel_search should be called but return False
                 assert mock_should_use.called
