@@ -23,11 +23,11 @@ class AgentConfig(BaseModel):
     force_search: bool = False
 
     # Search and round limits
-    max_rounds: int = Field(default=12, ge=1, description="Maximum search rounds per query")
+    max_rounds: int = Field(default=8, ge=1, description="Maximum search rounds per query")
     max_conversation_chars: int = Field(default=24000, ge=1024, description="Max conversation history size")
     compact_keep_turns: int = Field(default=10, ge=1, description="Turns to keep when compacting history")
-    max_followup_suggestions: int = Field(default=6, ge=0, description="Max followup suggestions to generate")
-    max_fill_attempts: int = Field(default=3, ge=0, description="Max attempts to fill missing results")
+    max_followup_suggestions: int = Field(default=8, ge=0, description="Max followup suggestions to generate")
+    max_fill_attempts: int = Field(default=2, ge=0, description="Max attempts to fill missing results")
     max_relevance_llm_checks: int = Field(default=2, ge=0, description="Max LLM checks for result relevance")
 
     # LLM context and prediction parameters
@@ -131,7 +131,8 @@ class AgentConfig(BaseModel):
             return f"Configuration validation failed: {e}"
 
         first_error = errors[0]
-        field_name = first_error["loc"][0] if first_error["loc"] else "unknown"
+        field_name_raw = first_error["loc"][0] if first_error["loc"] else "unknown"
+        field_name = str(field_name_raw)  # Convert to str for dict key access
         error_type = first_error["type"]
         value = data.get(field_name)
         ctx = first_error.get("ctx", {})

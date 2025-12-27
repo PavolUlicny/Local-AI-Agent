@@ -11,7 +11,12 @@ from langchain_ollama import OllamaEmbeddings
 try:
     from ollama._types import ResponseError
 except ImportError:  # pragma: no cover
-    ResponseError = None
+    # Create a dummy exception class that will never match isinstance checks
+    class ResponseError(Exception):  # type: ignore[no-redef]
+        """Dummy ResponseError for when ollama package is not available."""
+
+        pass
+
 
 from . import model_utils as _model_utils_mod
 
@@ -34,7 +39,7 @@ class EmbeddingClient:
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
         """Context manager exit - cleanup resources."""
         self.close()
 
@@ -59,7 +64,7 @@ class EmbeddingClient:
                 return None
             except Exception as exc:  # pragma: no cover - unexpected errors
                 # Check if this is an Ollama ResponseError with status 500 (model load failure)
-                if ResponseError is not None and isinstance(exc, ResponseError):
+                if isinstance(exc, ResponseError):
                     error_msg = str(exc)
                     if exc.status_code == 500 and "do load request" in error_msg:
                         # Model load failure - log once and suggest fix
