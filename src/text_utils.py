@@ -78,38 +78,6 @@ def is_context_length_error(message: str) -> bool:
     return any(ind in msg for ind in indicators)
 
 
-def pick_seed_query(seed_text: str, fallback: str) -> str:
-    banned = {
-        "none",
-        "n/a",
-        "na",
-        "no",
-        "nothing",
-        "no new info",
-        "no new information",
-        "no additional info",
-        "no additional information",
-    }
-    for line in seed_text.splitlines():
-        candidate = line.strip().strip("-*\"'").strip()
-        if not candidate:
-            continue
-        if ":" in candidate:
-            prefix, remainder = candidate.split(":", 1)
-            if prefix.isupper():
-                candidate = remainder.strip()
-        cleaned = re.sub(r"\s+", " ", candidate)
-        lowered = cleaned.lower()
-        if not cleaned or lowered in banned:
-            continue
-        if not any(ch.isalnum() for ch in cleaned):
-            continue
-        if len(cleaned) < 3:
-            continue
-        return cleaned
-    return fallback
-
-
 __all__ = [
     "MAX_REBUILD_RETRIES",
     "MAX_SEARCH_RESULTS_CHARS",
@@ -119,7 +87,6 @@ __all__ = [
     "current_datetime_utc",
     "is_context_length_error",
     "normalize_query",
-    "pick_seed_query",
     "regex_validate",
     "truncate_result",
     "truncate_text",
