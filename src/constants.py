@@ -18,6 +18,7 @@ class ChainName(str, Enum):
     PLANNING = "planning"
     RESULT_FILTER = "result_filter"
     QUERY_FILTER = "query_filter"
+    QUERY_REWRITE = "query_rewrite"
     SEARCH_DECISION = "search_decision"
     RESPONSE = "response"
     RESPONSE_NO_SEARCH = "response_no_search"
@@ -37,6 +38,7 @@ class RebuildKey(str, Enum):
     PLANNING = "planning"
     RELEVANCE = "relevance"
     QUERY_FILTER = "query_filter"
+    QUERY_REWRITE = "query_rewrite"
     ANSWER = "answer"
 
     def __str__(self) -> str:
