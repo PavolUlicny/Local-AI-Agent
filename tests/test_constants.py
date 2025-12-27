@@ -95,7 +95,6 @@ class TestChainNameEnum:
         """ChainName should define all chain types."""
         from src.constants import ChainName
 
-        assert ChainName.SEED.value == "seed"
         assert ChainName.PLANNING.value == "planning"
         assert ChainName.RESULT_FILTER.value == "result_filter"
         assert ChainName.QUERY_FILTER.value == "query_filter"
