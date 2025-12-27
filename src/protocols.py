@@ -116,11 +116,11 @@ class AgentProtocol(Protocol):
         """
         ...
 
-    def _char_budget(self, base_limit: int) -> int:
+    def _char_budget(self, _base_limit: int) -> int:
         """Calculate character budget based on context size.
 
         Args:
-            base_limit: Base character limit to use
+            _base_limit: Base character limit to use
 
         Returns:
             Adjusted character budget considering context constraints
