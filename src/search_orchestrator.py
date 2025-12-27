@@ -32,14 +32,12 @@ class SearchOrchestrator:
         self,
         query_inputs: dict,
         user_query: str,
-        primary_search_query: str,
     ) -> List[str]:
         """Execute multi-round search orchestration.
 
         Args:
             query_inputs: Query input dictionary with conversation history
             user_query: User's query text
-            primary_search_query: Initial search query
 
         Returns:
             List of aggregated result strings
@@ -69,7 +67,7 @@ class SearchOrchestrator:
 
         # Initialize search state
         aggregated_results: List[str] = []
-        pending_queries: List[str] = [primary_search_query]
+        pending_queries: List[str] = []
         rounds_executed = 0
         max_rounds = self.services.cfg.max_rounds
         max_suggestions = self.services.cfg.max_followup_suggestions
@@ -78,6 +76,27 @@ class SearchOrchestrator:
         # Iteration guard to prevent infinite loops
         iteration_guard = max(max_rounds * ITERATION_GUARD_MULTIPLIER, MIN_ITERATION_GUARD)
         iteration_count = 0
+
+        # Generate initial search queries using planning prompt
+        if max_suggestions > 0:
+            try:
+                initial_queries = generate_query_suggestions(
+                    aggregated_results=[],  # No results yet
+                    suggestion_limit=max_suggestions,
+                    context=context,
+                    services=self.services,
+                    raise_on_error=True,
+                )
+                enqueue_validated_queries(
+                    candidate_queries=initial_queries,
+                    pending_queries=pending_queries,
+                    max_rounds=max_rounds,
+                    context=context,
+                    state=state,
+                    services=self.services,
+                )
+            except SearchAbort:
+                return []
 
         # Main search loop
         while pending_queries and rounds_executed < max_rounds and iteration_count < iteration_guard:

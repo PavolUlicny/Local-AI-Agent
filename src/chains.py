@@ -57,7 +57,6 @@ def build_chains(llm_robot: OllamaLLM, llm_assistant: OllamaLLM) -> Dict[ChainNa
         Dictionary mapping ChainName enum values to configured LLM chains
     """
     chains: Dict[ChainName, "LLMChain"] = {
-        ChainName.SEED: _prompts.seed_prompt | llm_robot | StrOutputParser(),
         ChainName.PLANNING: _prompts.planning_prompt | llm_robot | StrOutputParser(),
         ChainName.RESULT_FILTER: _prompts.result_filter_prompt | llm_robot | StrOutputParser(),
         ChainName.QUERY_FILTER: _prompts.query_filter_prompt | llm_robot | StrOutputParser(),

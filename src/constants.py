@@ -15,7 +15,6 @@ class ChainName(str, Enum):
     Inherits from str to work as dict keys and in string operations.
     """
 
-    SEED = "seed"
     PLANNING = "planning"
     RESULT_FILTER = "result_filter"
     QUERY_FILTER = "query_filter"
@@ -35,7 +34,6 @@ class RebuildKey(str, Enum):
     """
 
     SEARCH_DECISION = "search_decision"
-    SEED = "seed"
     PLANNING = "planning"
     RELEVANCE = "relevance"
     QUERY_FILTER = "query_filter"

@@ -95,7 +95,6 @@ class Agent:
 
         self.rebuild_counts: dict[str, int] = {
             str(RebuildKey.SEARCH_DECISION): 0,
-            str(RebuildKey.SEED): 0,
             str(RebuildKey.RELEVANCE): 0,
             str(RebuildKey.PLANNING): 0,
             str(RebuildKey.QUERY_FILTER): 0,
@@ -506,43 +505,12 @@ class Agent:
             self._mark_error("Search decision failed; please retry.")
             return None
 
-    def _generate_seed_query(self, query_inputs: dict[str, Any], user_query: str) -> str | None:
-        """Generate a search seed query from the user query.
-
-        Args:
-            query_inputs: Prompt inputs for LLM
-            user_query: Original user query as fallback
-
-        Returns:
-            Search seed query, or None on error
-
-        Side Effects:
-            - May call _mark_error if seed generation fails
-        """
-        try:
-            seed_inputs = query_inputs.copy()
-            seed_result = self._invoke_chain_safe(ChainName.SEED, seed_inputs, str(RebuildKey.SEED))
-            if seed_result is None:
-                return None
-            return _text_utils_mod.pick_seed_query(str(seed_result).strip(), user_query)
-
-        except _exceptions.ResponseError as exc:
-            if "not found" in str(exc).lower():
-                _model_utils_mod.handle_missing_model(self._mark_error, "Robot", self.cfg.robot_model)
-                return None
-            logging.error("Seed generation failed: %s", exc)
-            self._mark_error("Seed query generation failed; please retry.")
-            return None
-
-    def _execute_search_pipeline(
-        self, query_inputs: dict[str, Any], user_query: str, primary_search_query: str
-    ) -> List[str]:
+    def _execute_search_pipeline(self, query_inputs: dict[str, Any], user_query: str) -> List[str]:
         """Execute the search orchestration pipeline.
 
         Args:
             query_inputs: Prompt inputs for LLM
             user_query: Original user query
-            primary_search_query: Initial search query to start with
 
         Returns:
             List of aggregated search result texts
@@ -557,7 +525,6 @@ class Agent:
         return orchestrator.run(
             query_inputs=query_inputs,
             user_query=user_query,
-            primary_search_query=primary_search_query,
         )
 
     def _generate_response(
@@ -632,17 +599,10 @@ class Agent:
         # Phase 3: Execute search if needed
         aggregated_results: List[str] = []
         if should_search:
-            primary_search_query = self._generate_seed_query(query_inputs, sanitized_query)
-            if primary_search_query is None:  # Error occurred
+            try:
+                aggregated_results = self._execute_search_pipeline(query_inputs, sanitized_query)
+            except _search_orchestrator_mod.SearchAbort:
                 return None
-
-            if primary_search_query:  # Empty string check
-                try:
-                    aggregated_results = self._execute_search_pipeline(
-                        query_inputs, sanitized_query, primary_search_query
-                    )
-                except _search_orchestrator_mod.SearchAbort:
-                    return None
 
         # Phase 4: Generate response
         response_text = self._generate_response(query_inputs, aggregated_results, should_search, one_shot)

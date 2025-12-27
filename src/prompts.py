@@ -298,46 +298,6 @@ planning_prompt = PromptTemplate(
     ),
 )
 
-seed_prompt = PromptTemplate(
-    input_variables=[
-        "current_year",
-        "current_month",
-        "current_day",
-        "conversation_history",
-        "user_question",
-        "known_answers",
-    ],
-    template=(
-        "YOUR JOB: Convert the user's question into a search query that will find the information they need.\n\n"
-        "OUTPUT FORMAT: Return one search query. No quotes. No extra words.\n\n"
-        "The current date below is the true current date.\n\n"
-        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
-        "EXAMPLES:\n"
-        "Question: 'What year was a language created?' → programming language creation year\n"
-        "Question: 'Best budget products under $X' → best budget products under X dollars {current_year}\n"
-        "Question: 'How does a process work?' → process name explanation {current_year}\n"
-        "Question: 'Product comparison for users' → product comparison user needs performance {current_year}\n"
-        "Question: 'Who is the leader?' → current leader {current_year}\n"
-        "Question: 'How much do products cost?' → product price {current_year}\n"
-        "Context: Just asked about an author / Question: 'When did he die?' → author name death date\n"
-        "Context: Just asked about fruits / Question: 'Where can I buy them?' → where to buy fruits {current_year}\n"
-        "Context: Just asked about a product / Question: 'How much do they cost?' → product name price {current_year}\n"
-        "Context: Just asked about a person / Question: 'Does he have a partner?' → person name wife spouse married\n"
-        "Context: Just asked about a person / Question: 'Is she married?' → person name husband spouse married\n\n"
-        "User question:\n{user_question}\n\n"
-        "Conversation context:\n{conversation_history}\n\n"
-        "Known answers:\n{known_answers}\n\n"
-        "RULES:\n"
-        "1. Turn the question into a search query (3-8 words)\n"
-        "2. Include the main topic + specific detail needed\n"
-        "3. If question uses pronouns (he/she/it/they/them), check Conversation context to identify what they refer to, then include that in the query\n"
-        "4. ALWAYS add current year ({current_year}) to get latest/current information\n"
-        "5. Only skip the year for historical facts (birth/death dates, when something was created)\n"
-        "6. Don't search for info already in Known answers\n\n"
-        "OUTPUT: Query text only."
-    ),
-)
-
 query_filter_prompt = PromptTemplate(
     input_variables=[
         "current_year",
