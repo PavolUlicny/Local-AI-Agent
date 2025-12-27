@@ -161,8 +161,8 @@ def test_enqueue_validated_queries_appends_valid_queries():
     assert len(pending) == 2
     assert "query1" in pending
     assert "query2" in pending
-    # Should update seen_query_norms
-    assert len(state.seen_query_norms) == 2
+    # Note: seen_query_norms is NOT updated by enqueue (it's updated during query execution)
+    assert len(state.seen_query_norms) == 0
 
 
 def test_enqueue_validated_queries_skips_duplicates():

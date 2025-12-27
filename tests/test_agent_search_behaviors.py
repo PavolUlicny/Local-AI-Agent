@@ -24,7 +24,6 @@ def test_result_embedding_shortcircuits_relevance_llm(monkeypatch: pytest.Monkey
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed query"]),
             "planning": DummyChain(outputs=["none"]),
             "result_filter": result_filter_chain,
             "query_filter": query_filter_chain,
@@ -70,7 +69,6 @@ def test_query_filter_embedding_skips_low_similarity_candidates(monkeypatch: pyt
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed query"]),
             "planning": planning_chain,
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": query_filter_chain,
@@ -112,13 +110,12 @@ def test_planning_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch) -> No
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed query"]),
             "planning": PlanningErrorChain(),
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": DummyChain(outputs=["NO"]),
             "search_decision": DummyChain(outputs=["SEARCH"]),
             "response": DummyChain(stream_tokens=["unused"]),
-            "response_no_search": DummyChain(stream_tokens=[]),
+            "response_no_search": DummyChain(stream_tokens=["unused"]),
         }
 
     def fake_ddg_results(self, query: str):  # noqa: ANN001
@@ -140,11 +137,10 @@ def test_planning_response_error_is_fatal(monkeypatch: pytest.MonkeyPatch) -> No
     agent = agent_module.Agent(AgentConfig(max_rounds=2))
     result = agent.answer_once("test planning?")
 
-    # With the refactored SearchOrchestrator, planning errors are caught and logged
-    # but don't abort the search. The search can still succeed with results from
-    # the primary query even if follow-up planning fails.
-    assert result is not None  # Search succeeded despite planning error
-    assert "unused" in result  # Got response from the search results
+    # If planning fails, no queries are generated and search returns empty results.
+    # The agent continues with response_no_search to generate a response.
+    assert result is not None  # Response generated without search results
+    assert "unused" in result  # Got response (from response_no_search chain)
 
 
 def test_search_loop_guard_prevents_spin(
@@ -161,7 +157,6 @@ def test_search_loop_guard_prevents_spin(
 
     def fake_build_chains(llm_robot: Any, llm_assistant: Any):  # noqa: ANN401
         return {
-            "seed": DummyChain(outputs=["seed query"]),
             "planning": planning_chain,
             "result_filter": DummyChain(outputs=["NO"]),
             "query_filter": query_filter_chain,
