@@ -369,3 +369,73 @@ result_filter_prompt = PromptTemplate(
         "OUTPUT: YES or NO only."
     ),
 )
+
+query_rewrite_prompt = PromptTemplate(
+    input_variables=[
+        "current_year",
+        "current_month",
+        "current_day",
+        "conversation_history",
+        "user_question",
+    ],
+    template=(
+        "YOUR JOB: Rewrite the user's question to be clearer, more explicit, and better for searching or answering.\n\n"
+        "OUTPUT FORMAT: Return ONLY the rewritten question. No explanations, no notes, just the improved question.\n\n"
+        "The current date below is the true current date.\n\n"
+        "CURRENT DATE: {current_year}-{current_month}-{current_day}\n\n"
+        "User question:\n{user_question}\n\n"
+        "Conversation history:\n{conversation_history}\n\n"
+        "REWRITING RULES:\n"
+        "1. RESOLVE PRONOUNS: Replace he/she/it/they/their/his/her with the actual person/thing from Conversation history\n"
+        "   Examples:\n"
+        "   - Context: Asked about Joe Biden / Question: 'his vp' → 'Joe Biden vice president'\n"
+        "   - Context: Asked about Apple / Question: 'their ceo' → 'Apple CEO'\n"
+        "   - Context: Asked about Elon Musk / Question: 'how old is he' → 'how old is Elon Musk'\n\n"
+        "2. EXPAND ACRONYMS: Make common abbreviations explicit\n"
+        "   Examples:\n"
+        "   - 'us president' → 'United States president'\n"
+        "   - 'uk pm' → 'United Kingdom prime minister'\n"
+        "   - 'nyc weather' → 'New York City weather'\n"
+        "   - 'ai safety' → 'artificial intelligence safety' (only if context unclear)\n\n"
+        "3. ADD TEMPORAL CONTEXT: Add time markers for time-sensitive queries\n"
+        "   Examples:\n"
+        "   - 'stock price' → 'stock price {current_year}'\n"
+        "   - 'current president' → 'current president {current_year}'\n"
+        "   - 'latest news' → 'latest news {current_year}'\n"
+        "   - 'weather today' → 'weather today {current_year}-{current_month}-{current_day}'\n"
+        "   BUT: 'when was he born' → NO temporal context needed (historical fact)\n\n"
+        "4. PRESERVE INTENT: Don't change the question's meaning\n"
+        "   - Keep the same question type (who/what/when/where/how/why)\n"
+        "   - Keep specific requests like 'in celsius' or 'in simple terms'\n"
+        "   - Don't add information not implied by the question\n\n"
+        "5. KEEP IT SIMPLE: Don't over-expand\n"
+        "   - Simple math/coding questions → return unchanged\n"
+        "   - Questions already clear → return unchanged or lightly improved\n"
+        "   - Don't add words like 'please' or 'information about'\n\n"
+        "EXAMPLES:\n"
+        "Context: Just asked about Donald Trump\n"
+        "Question: 'his age'\n"
+        "Output: Donald Trump age\n\n"
+        "Context: Just asked about Python programming\n"
+        "Question: 'how do I sort a list'\n"
+        "Output: how do I sort a list in Python\n\n"
+        "Context: Empty\n"
+        "Question: 'current us president'\n"
+        "Output: current United States president {current_year}\n\n"
+        "Context: Empty\n"
+        "Question: 'solve x^2 + 5x + 6 = 0'\n"
+        "Output: solve x^2 + 5x + 6 = 0\n\n"
+        "Context: Just asked about Tesla stock\n"
+        "Question: 'what about their competitors'\n"
+        "Output: Tesla competitors\n\n"
+        "Context: Empty\n"
+        "Question: 'nyc weather today'\n"
+        "Output: New York City weather today {current_year}-{current_month}-{current_day}\n\n"
+        "IMPORTANT:\n"
+        "- If question is already clear and explicit, you may return it unchanged\n"
+        "- Only rewrite when it genuinely improves clarity or searchability\n"
+        "- NEVER add meta-commentary like 'Here is the rewritten question:'\n"
+        "- Just output the question text itself\n\n"
+        "Rewrite the question now:"
+    ),
+)
