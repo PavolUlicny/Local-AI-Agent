@@ -55,6 +55,7 @@ def main() -> int:
             ChainName.PLANNING,
             ChainName.RESULT_FILTER,
             ChainName.QUERY_FILTER,
+            ChainName.QUERY_REWRITE,
             ChainName.SEARCH_DECISION,
             ChainName.RESPONSE,
             ChainName.RESPONSE_NO_SEARCH,
