@@ -14,6 +14,7 @@ from .constants import (
     MIN_CHAR_BUDGET,
     CHARS_PER_TOKEN_ESTIMATE,
     CONTEXT_SAFETY_MARGIN,
+    MAX_QUERY_LENGTH,
     MAX_SEARCH_RESULTS_CHARS,
 )
 from . import commands as _commands_mod
@@ -98,6 +99,7 @@ class Agent:
             str(RebuildKey.RELEVANCE): 0,
             str(RebuildKey.PLANNING): 0,
             str(RebuildKey.QUERY_FILTER): 0,
+            str(RebuildKey.QUERY_REWRITE): 0,
             str(RebuildKey.ANSWER): 0,
         }
         self._prompt_session: PromptSessionType | None = None
@@ -215,6 +217,81 @@ class Agent:
             InputValidationError: If input contains suspicious injection patterns
         """
         return _input_validation_mod.sanitize_user_input(user_query)
+
+    def _rewrite_user_query(self, sanitized_query: str, write_fn: Callable[[str], None] | None = None) -> str:
+        """Rewrite user query for clarity and better search/response quality.
+
+        Resolves pronouns, expands acronyms, adds temporal context.
+        Falls back to original query on any errors.
+
+        Args:
+            sanitized_query: Sanitized user query
+            write_fn: Optional function to display rewritten query to user
+
+        Returns:
+            Rewritten query string (or original if rewriting fails)
+        """
+        # Skip rewriting for very short queries (greetings, acknowledgments)
+        if len(sanitized_query.strip()) < 5:
+            return sanitized_query
+
+        # Skip for pure command-like queries
+        lower_query = sanitized_query.lower().strip()
+        skip_patterns = ["hi", "hello", "thanks", "thank you", "ok", "okay", "bye"]
+        if lower_query in skip_patterns:
+            return sanitized_query
+
+        try:
+            # Build inputs for rewrite chain
+            from datetime import datetime, timezone
+
+            dt_obj = datetime.now(timezone.utc)
+            current_year = str(dt_obj.year)
+            current_month = f"{dt_obj.month:02d}"
+            current_day = f"{dt_obj.day:02d}"
+
+            conversation_history = self.conversation.format_for_prompt()
+            max_conv_chars = self._char_budget(self.cfg.max_conversation_chars)
+            if len(conversation_history) > max_conv_chars:
+                conversation_history = "...\n\n" + conversation_history[-max_conv_chars:]
+
+            rewrite_inputs = {
+                "current_year": current_year,
+                "current_month": current_month,
+                "current_day": current_day,
+                "conversation_history": conversation_history,
+                "user_question": sanitized_query,
+            }
+
+            # Invoke rewrite chain with context overflow handling
+            rewritten = self._invoke_chain_safe(
+                ChainName.QUERY_REWRITE,
+                rewrite_inputs,
+                str(RebuildKey.QUERY_REWRITE),
+            )
+
+            if rewritten is None:
+                logging.warning("Query rewrite returned None, using original query")
+                return sanitized_query
+
+            rewritten_str = str(rewritten).strip()
+
+            # Validate rewritten query
+            if not rewritten_str or len(rewritten_str) > MAX_QUERY_LENGTH:
+                logging.warning("Query rewrite invalid (empty or too long), using original")
+                return sanitized_query
+
+            # If rewritten query is substantially different, show it to user
+            if rewritten_str.lower() != sanitized_query.lower():
+                logging.info("Query rewritten: '%s' -> '%s'", sanitized_query, rewritten_str)
+                if write_fn and self._is_tty:
+                    write_fn(f"→ Understood as: {rewritten_str}\n")
+
+            return rewritten_str
+
+        except Exception as exc:
+            logging.warning("Query rewrite failed: %s, using original query", exc)
+            return sanitized_query
 
     def _build_query_inputs(self, user_query: str) -> dict[str, Any]:
         """Build input dictionary for LLM chains - simplified without topic system.
@@ -589,7 +666,11 @@ class Agent:
             self._mark_error(str(e))
             return None
 
-        query_inputs = self._build_query_inputs(sanitized_query)
+        # Rewrite query for clarity (resolves pronouns, expands acronyms, adds temporal context)
+        write_fn = self._write if not one_shot else None
+        rewritten_query = self._rewrite_user_query(sanitized_query, write_fn=write_fn)
+
+        query_inputs = self._build_query_inputs(rewritten_query)
 
         # Phase 2: Determine if search is needed
         should_search = self._determine_search_necessity(query_inputs)
@@ -610,6 +691,7 @@ class Agent:
             return None
 
         # Phase 5: Update conversation history
+        # Store ORIGINAL query in history (not rewritten) to prevent query drift
         self.conversation.add_turn(
             user_query=sanitized_query,
             assistant_response=response_text,
